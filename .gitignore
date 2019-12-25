@@ -20,3 +20,4 @@ artifacts/
 .build
 TestResult.xml
 .vs/
+_ReSharper.Caches/
