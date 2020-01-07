@@ -140,8 +140,12 @@ namespace Npgsql.SqlGenerators
                 break;
                 // PostgreSQL has no support for bytes. int2 is used instead in Npgsql.
             case PrimitiveTypeKind.Byte:
+                sqlText.AppendFormat(ni, "{0}::tinyint", _value);
+                break;
+                /*
                 value = (short)(byte)_value;
                 goto case PrimitiveTypeKind.Int16;
+                */
             case PrimitiveTypeKind.SByte:
                 value = (short)(sbyte)_value;
                 goto case PrimitiveTypeKind.Int16;
@@ -361,6 +365,7 @@ namespace Npgsql.SqlGenerators
     {
         public string Variable { get; set; }
         public string Name { get; set; }
+        public string Cast { get; set; }
 
         internal override void WriteSql(StringBuilder sqlText)
         {
@@ -370,6 +375,9 @@ namespace Npgsql.SqlGenerators
                 sqlText.Append(".");
             }
             sqlText.Append(SqlBaseGenerator.QuoteIdentifier(Name));
+            if (Cast != null)
+                sqlText.Append("::").Append(Cast);
+
             base.WriteSql(sqlText);
         }
     }
@@ -647,7 +655,70 @@ namespace Npgsql.SqlGenerators
                 first = false;
             }
             sqlText.Append(")");
+            WriteAdditionalSql(sqlText);
             base.WriteSql(sqlText);
+        }
+
+        internal virtual void WriteAdditionalSql(StringBuilder sqlText){}
+    }
+
+    internal class WindowFunctionExpression : FunctionExpression
+    {
+        List<VisitedExpression> _partitionArgs;
+        List<KeyValuePair<VisitedExpression, bool>> _sortArgs;
+
+        public WindowFunctionExpression(string name) : base(name) { }
+
+        internal FunctionExpression AddPartitionArgument(VisitedExpression visitedExpression)
+        {
+            if (_partitionArgs == null)
+                _partitionArgs = new List<VisitedExpression>();
+            _partitionArgs.Add(visitedExpression);
+            return this;
+        }
+
+        internal FunctionExpression AddSortArgument(VisitedExpression visitedExpression, bool isAscending)
+        {
+            if (_sortArgs == null)
+                _sortArgs = new List<KeyValuePair<VisitedExpression, bool>>();
+            _sortArgs.Add(new KeyValuePair<VisitedExpression, bool>(visitedExpression, isAscending));
+            return this;
+        }
+
+        internal override void WriteAdditionalSql(StringBuilder sqlText)
+        {
+            sqlText.Append(" OVER (");
+            var hasClause = false;
+
+            if (_partitionArgs != null && _partitionArgs.Count > 0)
+            {
+                hasClause = true;
+                sqlText.Append("PARTITION BY ");
+                for (var i = 0; i < _partitionArgs.Count; i++)
+                {
+                    if (i > 0)
+                        sqlText.Append(", ");
+                    _partitionArgs[i].WriteSql(sqlText);
+                }
+            }
+
+            if (_sortArgs != null && _sortArgs.Count > 0)
+            {
+                if (hasClause)
+                    sqlText.Append(" ");
+                sqlText.Append("ORDER BY ");
+
+                for (var i = 0; i < _sortArgs.Count; i++)
+                {
+                    if (i > 0)
+                        sqlText.Append(", ");
+                    var s = _sortArgs[i];
+                    s.Key.WriteSql(sqlText);
+                    sqlText.Append(s.Value ? " ASC" : " DESC");
+                }
+            }
+
+            sqlText.Append(")");
         }
     }
 
@@ -803,6 +874,8 @@ namespace Npgsql.SqlGenerators
         public static readonly Operator NotIn = new Operator("NOT IN", 3, 9, 6);
         public static readonly Operator Like = new Operator("LIKE", 6, 6);
         public static readonly Operator NotLike = new Operator("NOT LIKE", 3, 6, 6);
+        public static readonly Operator SimilarTo = new Operator("SIMILAR TO", 6, 6);
+        public static readonly Operator NotSimilarTo = new Operator("NOT SIMILAR TO", 3, 6, 6);
         public static readonly Operator LessThan = new Operator("<", 5, 5);
         public static readonly Operator GreaterThan = new Operator(">", 5, 5);
         public new static readonly Operator Equals = new Operator("=", 4, 5, UnaryTypes.Binary, true);

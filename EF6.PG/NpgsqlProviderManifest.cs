@@ -6,6 +6,7 @@ using System.Data.Entity.Core.Metadata.Edm;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Xml;
 using JetBrains.Annotations;
 using NpgsqlTypes;
@@ -14,6 +15,8 @@ namespace Npgsql
 {
     internal class NpgsqlProviderManifest : DbXmlEnabledProviderManifest
     {
+        const char LikeEscapeChar = '\\';
+
         public Version Version { get; }
 
         public NpgsqlProviderManifest(string serverVersion)
@@ -50,6 +53,7 @@ namespace Npgsql
             case PrimitiveTypeKind.Boolean:
                 return NpgsqlDbType.Boolean;
             case PrimitiveTypeKind.Byte:
+                return NpgsqlDbType.Tinyint;
             case PrimitiveTypeKind.SByte:
             case PrimitiveTypeKind.Int16:
                 return NpgsqlDbType.Smallint;
@@ -93,6 +97,7 @@ namespace Npgsql
             switch (storeTypeName)
             {
             case "bool":
+            case "tinyint":
             case "int2":
             case "int4":
             case "int8":
@@ -127,6 +132,7 @@ namespace Npgsql
                     return TypeUsage.CreateStringTypeUsage(primitiveType, isUnicode, false, (int)facet.Value);
                 else
                     return TypeUsage.CreateStringTypeUsage(primitiveType, isUnicode, false);
+            case "citext":
             case "text":
             case "xml":
                 return TypeUsage.CreateStringTypeUsage(primitiveType, isUnicode, false);
@@ -293,6 +299,7 @@ namespace Npgsql
             case PrimitiveTypeKind.Guid:
                 return TypeUsage.CreateDefaultTypeUsage(StoreTypeNameToStorePrimitiveType["uuid"]);
             case PrimitiveTypeKind.Byte:
+                return TypeUsage.CreateDefaultTypeUsage(StoreTypeNameToStorePrimitiveType["tinyint"]);
             case PrimitiveTypeKind.SByte:
                 return TypeUsage.CreateDefaultTypeUsage(StoreTypeNameToStorePrimitiveType["int2"]);
             }
@@ -310,12 +317,102 @@ namespace Npgsql
 
         public override bool SupportsEscapingLikeArgument(out char escapeCharacter)
         {
-            escapeCharacter = '\\';
+            escapeCharacter = LikeEscapeChar;
             return true;
         }
 
         public override string EscapeLikeArgument([NotNull] string argument)
-            => argument.Replace("\\","\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        {
+            StringBuilder sb = null;
+            AppendEscapedLikeText(ref sb, false, argument);
+
+            return sb == null ? argument : sb.ToString();
+        }
+
+        public override string PrepareCommonLikePattern(DbLikePattern patternValue)
+        {
+            var sb = new StringBuilder(128);
+
+            foreach (var fragment in patternValue.Fragments)
+            {
+                switch (fragment.Type)
+                {
+                case DbLikePatternType.AnyString:
+                    sb.Append('%');
+                    break;
+                case DbLikePatternType.AnyChar:
+                    sb.Append('_');
+                    break;
+                case DbLikePatternType.Charset:
+                    sb.Append('[').Append(fragment.Value).Append(']');
+                    break;
+                case DbLikePatternType.PlainText:
+                    AppendEscapedLikeText(ref sb, true, fragment.Value);
+                    break;
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        internal static void AppendEscapedLikeText(ref StringBuilder sb, bool isCommonLike, string text)
+        {
+            for (var i = 0; i < text.Length; i++)
+            {
+                var c = text[i];
+                var needEscape = false;
+
+                if (!isCommonLike)
+                {
+                    switch (c)
+                    {
+                    case '%':
+                    case '_':
+                    case LikeEscapeChar:
+                        needEscape = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    switch (c)
+                    {
+                    case '%':
+                    case '_':
+                    case LikeEscapeChar:
+                    case '|':
+                    case '*':
+                    case '+':
+                    case '?':
+                    case '[':
+                    case ']':
+                    case '{':
+                    case '}':
+                    case '(':
+                    case ')':
+                        needEscape = true;
+                        break;
+                    }
+                }
+
+                if (needEscape)
+                {
+                    if (sb == null)
+                    {
+                        sb = new StringBuilder(128);
+                        if (i > 0)
+                            sb.Append(text.Substring(0, i));
+                    }
+
+                    sb.Append(LikeEscapeChar).Append(c);
+                }
+                else if (sb != null)
+                {
+                    sb.Append(c);
+                }
+            }
+        }
+
 
         public override bool SupportsInExpression() => true;
 

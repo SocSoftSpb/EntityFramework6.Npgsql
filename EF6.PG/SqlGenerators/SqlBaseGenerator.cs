@@ -1,11 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Data.Entity;
 using System.Diagnostics;
 using System.Globalization;
 using System.Data.Entity.Core.Common.CommandTrees;
+using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 using System.Text.RegularExpressions;
 using System.Text;
@@ -373,7 +376,7 @@ namespace Npgsql.SqlGenerators
             {
                 var function = (DbFunctionExpression)expression;
                 var input = new InputExpression(
-                    VisitFunction(function.Function, function.Arguments, function.ResultType), bindingName);
+                    VisitFunction(function.Function, function.Arguments, function.ResultType, function.Partitions, function.SortOrder), bindingName);
 
                 n = new PendingProjectsNode(bindingName, input);
                 break;
@@ -628,7 +631,8 @@ namespace Npgsql.SqlGenerators
 
         // LIKE keyword
         public override VisitedExpression Visit([NotNull] DbLikeExpression expression)
-            => OperatorExpression.Build(Operator.Like, _useNewPrecedences, expression.Argument.Accept(this), expression.Pattern.Accept(this));
+            => OperatorExpression.Build(expression.IsCommon ? Operator.SimilarTo : Operator.Like,
+                _useNewPrecedences, expression.Argument.Accept(this), expression.Pattern.Accept(this));
 
         public override VisitedExpression Visit([NotNull] DbJoinExpression expression)
         {
@@ -642,7 +646,14 @@ namespace Npgsql.SqlGenerators
         }
 
         public override VisitedExpression Visit([NotNull] DbIsNullExpression expression)
-            => OperatorExpression.Build(Operator.IsNull, _useNewPrecedences, expression.Argument.Accept(this));
+        {
+            var argument = expression.Argument;
+            if (argument.ExpressionKind == DbExpressionKind.ParameterReference)
+            {
+                argument = argument.CastTo(argument.ResultType);
+            }
+            return OperatorExpression.Build(Operator.IsNull, _useNewPrecedences, argument.Accept(this));
+        }
 
         // NOT EXISTS
         public override VisitedExpression Visit([NotNull] DbIsEmptyExpression expression)
@@ -674,7 +685,7 @@ namespace Npgsql.SqlGenerators
         // a function call
         // may be built in, canonical, or user defined
         public override VisitedExpression Visit([NotNull] DbFunctionExpression expression)
-            => VisitFunction(expression.Function, expression.Arguments, expression.ResultType);
+            => VisitFunction(expression.Function, expression.Arguments, expression.ResultType, expression.Partitions, expression.SortOrder);
 
         public override VisitedExpression Visit([NotNull] DbFilterExpression expression)
         {
@@ -767,8 +778,9 @@ namespace Npgsql.SqlGenerators
             {
             case PrimitiveTypeKind.Boolean:
                 return "bool";
-            case PrimitiveTypeKind.SByte:
             case PrimitiveTypeKind.Byte:
+                return "tinyint";
+            case PrimitiveTypeKind.SByte:
             case PrimitiveTypeKind.Int16:
                 return "int2";
             case PrimitiveTypeKind.Int32:
@@ -931,10 +943,104 @@ namespace Npgsql.SqlGenerators
             throw new NotSupportedException();
         }
 
-        VisitedExpression VisitFunction(EdmFunction function, IList<DbExpression> args, TypeUsage resultType)
+        VisitedExpression VisitWindowFunction(EdmFunction function, IList<DbExpression> args, TypeUsage resultType, IList<DbExpression> partitions, IList<DbSortClause> sortOrder)
+        {
+            VisitedExpression WindowFunctionDefault(string functionName)
+            {
+                var f = new WindowFunctionExpression(functionName);
+                AddArguments(f);
+                AddWindowArguments(f);
+                return f;
+            }
+
+            VisitedExpression WindowFunctionCount(string functionName, bool isLong)
+            {
+                var f = new WindowFunctionExpression(functionName);
+                if (args == null || args.Count == 0)
+                {
+                    f.AddArgument("*");
+                }
+                else
+                {
+                    AddArguments(f);
+                }
+
+                AddWindowArguments(f);
+                return f;
+            }
+
+            void AddWindowArguments(WindowFunctionExpression wf)
+            {
+                if (partitions != null && partitions.Count > 0)
+                {
+                    foreach (var pa in partitions)
+                    {
+                        wf.AddPartitionArgument(pa.Accept(this));
+                    }
+                }
+
+                if (sortOrder != null && sortOrder.Count > 0)
+                {
+                    foreach (var s in sortOrder)
+                    {
+                        wf.AddSortArgument(s.Expression.Accept(this), s.Ascending);
+                    }
+                }
+            }
+
+            void AddArguments(WindowFunctionExpression wf)
+            {
+                foreach (var a in args)
+                {
+                    wf.AddArgument(a.Accept(this));
+                }
+            }
+
+            switch (function.Name)
+            {
+            case "W_" + nameof(WindowFunction.RowNumber):
+                return WindowFunctionDefault("ROW_NUMBER");
+            case "W_" + nameof(WindowFunction.Rank):
+                return WindowFunctionDefault("RANK");
+            case "W_" + nameof(WindowFunction.DenseRank):
+                return WindowFunctionDefault("DENSE_RANK");
+            case "W_" + nameof(WindowFunction.NTile):
+            {
+                var f = new WindowFunctionExpression("NTILE");
+                var arg = new CastExpression(args[0].Accept(this), "int4");
+                f.AddArgument(arg);
+                AddWindowArguments(f);
+                return f;
+            }
+
+            case "W_" + nameof(WindowFunction.Count):
+                return WindowFunctionCount("COUNT", false);
+            case "W_" + nameof(WindowFunction.LongCount):
+                return WindowFunctionCount("COUNT", true);
+
+            case "W_" + nameof(WindowFunction.Avg):
+                return WindowFunctionDefault("AVG");
+            case "W_" + nameof(WindowFunction.Sum):
+                return WindowFunctionDefault("SUM");
+            case "W_" + nameof(WindowFunction.Max):
+                return WindowFunctionDefault("MAX");
+            case "W_" + nameof(WindowFunction.Min):
+                return WindowFunctionDefault("MIN");
+
+            default:
+                throw new NotSupportedException("NotSupported " + function.Name);
+            }
+        }
+
+        VisitedExpression VisitFunction(EdmFunction function, IList<DbExpression> args, TypeUsage resultType, IList<DbExpression> partitions, IList<DbSortClause> sortOrder)
         {
             if (function.NamespaceName == "Edm")
             {
+                if (function.WindowAttribute)
+                {
+                    return VisitWindowFunction(function, args, resultType, partitions, sortOrder);
+                }
+
                 VisitedExpression arg;
                 switch (function.Name)
                 {
@@ -964,10 +1070,21 @@ namespace Npgsql.SqlGenerators
                     Debug.Assert(args.Count == 2);
                     return Substring(args[0].Accept(this), new LiteralExpression(" 1 "), args[1].Accept(this));
                 case "Length":
+                {
                     var length = new FunctionExpression("char_length");
                     Debug.Assert(args.Count == 1);
                     length.AddArgument(args[0].Accept(this));
                     return new CastExpression(length, GetDbType(resultType.EdmType));
+                }
+
+                case "DataLength":
+                {
+                    var length = new FunctionExpression("octet_length");
+                    Debug.Assert(args.Count == 1);
+                    length.AddArgument(args[0].Accept(this));
+                    return new CastExpression(length, GetDbType(resultType.EdmType));
+                }
+
                 case "LTrim":
                     return StringModifier("ltrim", args);
                 case "Replace":
@@ -1078,10 +1195,26 @@ namespace Npgsql.SqlGenerators
                     return BinaryMath("trunc", args);
 
                 case "NewGuid":
-                    return new FunctionExpression("uuid_generate_v4");
+                    return new FunctionExpression("gen_random_uuid");
                 case "TruncateTime":
                     return new TruncateTimeExpression("day", args[0].Accept(this));
-
+                case "IsNumeric":
+                    return IsNumeric(args[0].Accept(this));
+                case "TimeToString":
+                    Debug.Assert(args.Count == 1);
+                    var timeToString = new FunctionExpression("to_char");
+                    timeToString.AddArgument(args[0].Accept(this));
+                    timeToString.AddArgument("'HH24:MI:SS'");
+                    return timeToString;
+                
+                case "IsNull":
+                    Debug.Assert(args.Count == 2);
+                    return Coalesce(args[0].Accept(this), args[1].Accept(this));
+                    
+                case "NullIf":
+                    Debug.Assert(args.Count == 2);
+                    return NullIf(args[0].Accept(this), args[1].Accept(this));
+                    
                 default:
                     throw new NotSupportedException("NotSupported " + function.Name);
                 }
@@ -1438,6 +1571,29 @@ namespace Npgsql.SqlGenerators
         {
             Debug.Assert(args.Count == 2);
             return OperatorExpression.Build(oper, _useNewPrecedences, args[0].Accept(this), args[1].Accept(this));
+        }
+
+        VisitedExpression Coalesce(VisitedExpression value, VisitedExpression defaultValue)
+        {
+            var substring = new FunctionExpression("COALESCE");
+            substring.AddArgument(value);
+            substring.AddArgument(defaultValue);
+            return substring;
+        }
+
+        VisitedExpression NullIf(VisitedExpression value, VisitedExpression defaultValue)
+        {
+            var substring = new FunctionExpression("NULLIF");
+            substring.AddArgument(value);
+            substring.AddArgument(defaultValue);
+            return substring;
+        }
+
+        VisitedExpression IsNumeric(VisitedExpression value)
+        {
+            var substring = new FunctionExpression("isnumeric");
+            substring.AddArgument(value);
+            return substring;
         }
 
         public override VisitedExpression Visit([NotNull] DbInExpression expression)

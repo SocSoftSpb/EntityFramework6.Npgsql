@@ -51,6 +51,12 @@ namespace Npgsql.SqlGenerators
                 ? ((DbPropertyExpression)expression.Instance).Property.Name
                 : ((DbVariableReferenceExpression)expression.Instance).VariableName;
 
+            string cast = null;
+            if (expression.Property.TypeUsage.EdmType.Name == "xml")
+            {
+                cast = "text";
+            }
+
             var node = RefToNode[from];
             from = node.TopName;
             while (node != null)
@@ -76,7 +82,7 @@ namespace Npgsql.SqlGenerators
                 }
                 node = node.JoinParent;
             }
-            return new ColumnReferenceExpression { Variable = from, Name = name };
+            return new ColumnReferenceExpression { Variable = from, Name = name, Cast = cast };
         }
 
         // must provide a NULL of the correct type
