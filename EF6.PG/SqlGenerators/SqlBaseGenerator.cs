@@ -6,9 +6,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
+using System.Data.Entity.Core.Common.CommandTrees.Internal;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
 using System.Text.RegularExpressions;
 using System.Text;
@@ -25,6 +25,8 @@ namespace Npgsql.SqlGenerators
         protected HashSet<InputExpression> CurrentExpressions = new HashSet<InputExpression>();
         protected uint AliasCounter;
         protected uint ParameterCount;
+        
+        protected virtual DbDmlOperation DmlOperation => null;
 
         internal Version Version
         {
@@ -296,15 +298,35 @@ namespace Npgsql.SqlGenerators
                 {
                     var prop = rowType.Properties[i];
                     var argument = projection.Arguments[i].Accept(this);
-                    var constantArgument = projection.Arguments[i] as DbConstantExpression;
-                    if (constantArgument != null && constantArgument.Value is string)
+
+                    if (DmlOperation is DbDmlDeleteOperation dmlOp && argument is LiteralExpression { Literal: DmlUtils.CtidColumnName })
                     {
-                        argument = new CastExpression(argument, "varchar");
+                        var dmlTarget = new FindDmlTargetVisitor(dmlOp.TargetEntitySet);
+                        dmlTarget.PullUpCtid(input, false);
+
+                        if (!dmlTarget.Success)
+                            throw new InvalidOperationException($"Can't project CTID column for query {input}.");
+
+                        input.Projection.Arguments.Add(new ColumnExpression(
+                            new ColumnReferenceExpression
+                            {
+                                Variable = dmlTarget.TableName,
+                                Name = dmlTarget.ColumnName,
+                                QuoteName = (dmlTarget.ColumnName != DmlUtils.CtidColumnName)
+                            }, prop.Name, prop.TypeUsage));
                     }
+                    else
+                    {
+                        var constantArgument = projection.Arguments[i] as DbConstantExpression;
+                        if (constantArgument != null && constantArgument.Value is string)
+                        {
+                            argument = new CastExpression(argument, "varchar");
+                        }
 
-                    input.Projection.Arguments.Add(new ColumnExpression(argument, prop.Name, prop.TypeUsage));
+                        input.Projection.Arguments.Add(new ColumnExpression(argument, prop.Name, prop.TypeUsage));
+                    }
                 }
-
+                
                 if (enterScope) LeaveExpression(child);
 
                 n = new PendingProjectsNode(bindingName, input);
@@ -1214,6 +1236,10 @@ namespace Npgsql.SqlGenerators
                 case "NullIf":
                     Debug.Assert(args.Count == 2);
                     return NullIf(args[0].Accept(this), args[1].Accept(this));
+                
+                case "dml_" + nameof(DbDmlFunctions.DeleteMarker):
+                case "dml_" + nameof(DbDmlFunctions.DeleteMarkerRowCount):
+                    return new LiteralExpression(DmlUtils.CtidColumnName);
                     
                 default:
                     throw new NotSupportedException("NotSupported " + function.Name);

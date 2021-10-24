@@ -6,6 +6,7 @@
     <AssemblyName>EntityFramework6.Npgsql.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="EntityFramework" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

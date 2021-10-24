@@ -155,9 +155,26 @@ namespace Npgsql
             {
                 //Close all connections in pool or exception "database used by another user appears"
                 NpgsqlConnection.ClearAllPools();
+                KillDatabaseSessions(conn, connection.Database);
                 using (var command = new NpgsqlCommand("DROP DATABASE \"" + connection.Database + "\";", conn))
                     command.ExecuteNonQuery();
             });
+
+            void KillDatabaseSessions(NpgsqlConnection conn, string databaseName)
+            {
+                try
+                {
+                    using (var command = new NpgsqlCommand("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @p0;", conn))
+                    {
+                        command.Parameters.Add(new NpgsqlParameter<string>("@p0", databaseName));
+                        command.ExecuteNonQuery();
+                    }
+                }
+                catch
+                {
+                    // do nothinng
+                }
+            }
         }
 
         static void UsingPostgresDbConnection(NpgsqlConnection connection, Action<NpgsqlConnection> action)

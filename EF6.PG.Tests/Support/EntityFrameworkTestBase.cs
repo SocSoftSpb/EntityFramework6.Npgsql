@@ -32,12 +32,16 @@ namespace EntityFramework6.Npgsql.Tests
             // Create sequence for the IntComputedValue property.
             using (var createSequenceConn = OpenConnection(ConnectionString))
             {
+                createSequenceConn.ExecuteNonQuery("create extension if not exists tinyint;");
+                
                 createSequenceConn.ExecuteNonQuery("create sequence blog_int_computed_value_seq");
                 createSequenceConn.ExecuteNonQuery("alter table \"dbo\".\"Blogs\" alter column \"IntComputedValue\" set default nextval('blog_int_computed_value_seq');");
                 createSequenceConn.ExecuteNonQuery("alter table \"dbo\".\"Posts\" alter column \"VarbitColumn\" type varbit using null");
                 createSequenceConn.ExecuteNonQuery("CREATE OR REPLACE FUNCTION \"dbo\".\"StoredAddFunction\"(integer, integer) RETURNS integer AS $$ SELECT $1 + $2; $$ LANGUAGE SQL;");
                 createSequenceConn.ExecuteNonQuery("CREATE OR REPLACE FUNCTION \"dbo\".\"StoredEchoFunction\"(integer) RETURNS integer AS $$ SELECT $1; $$ LANGUAGE SQL;");
                 createSequenceConn.ExecuteNonQuery("CREATE OR REPLACE FUNCTION \"dbo\".\"GetBlogsByName\"(text) RETURNS TABLE(\"BlogId\" int, \"Name\" text, \"IntComputedValue\" int) as $$ select \"BlogId\", \"Name\", \"IntComputedValue\" from \"dbo\".\"Blogs\" where \"Name\" ilike '%' || $1 || '%' $$ LANGUAGE SQL;");
+
+                createSequenceConn.ReloadTypes();
             }
         }
 
@@ -77,7 +81,21 @@ namespace EntityFramework6.Npgsql.Tests
         public DateTime CreationDate { get; set; }
         public string VarbitColumn { get; set; }
         public int BlogId { get; set; }
+        
+        public int Blog2Id { get; set; }
         public virtual Blog Blog { get; set; }
+        
+        public virtual Blog Blog2 { get; set; }
+    }
+
+    public class Post1 : Post
+    {
+        
+    }
+
+    public class Post2 : Post
+    {
+        
     }
 
     public class ClrEnumEntity
@@ -197,6 +215,13 @@ namespace EntityFramework6.Npgsql.Tests
             dbModelBuilder.Entity<User>();
             dbModelBuilder.Entity<Editor>();
             dbModelBuilder.Entity<Administrator>();
+
+            dbModelBuilder.Entity<Post>().HasRequired(e => e.Blog).WithMany(e => e.Posts).HasForeignKey(e => e.BlogId);
+            dbModelBuilder.Entity<Post>().HasRequired(e => e.Blog2).WithMany().HasForeignKey(e => e.Blog2Id);
+
+            dbModelBuilder.Entity<Post>().Map(e => e.Requires("dDd").HasValue((byte)11));
+            dbModelBuilder.Entity<Post1>().Map(e => e.Requires("dDd").HasValue((byte)25));
+            dbModelBuilder.Entity<Post2>().Map(e => e.Requires("dDd").HasValue((byte)55));
 
             // Import function
             var dbModel = dbModelBuilder.Build(connection);

@@ -11,6 +11,8 @@ namespace Npgsql.SqlGenerators
     {
         readonly DbQueryCommandTree _commandTree;
 
+        protected override DbDmlOperation DmlOperation => _commandTree.DmlOperation; 
+
         public SqlSelectGenerator(DbQueryCommandTree commandTree)
         {
             _commandTree = commandTree;
@@ -92,36 +94,89 @@ namespace Npgsql.SqlGenerators
 
         public override void BuildCommand(DbCommand command)
         {
+            var dmlOperation = _commandTree.DmlOperation;
+            
             Debug.Assert(command is NpgsqlCommand);
             Debug.Assert(_commandTree.Query is DbProjectExpression);
             var ve = _commandTree.Query.Accept(this);
             Debug.Assert(ve is InputExpression);
             var pe = (InputExpression)ve;
-            command.CommandText = pe.ToString();
 
-            // We retrieve all strings as unknowns in text format in the case the data types aren't really texts
-            ((NpgsqlCommand)command).UnknownResultTypeList = pe.Projection.Arguments.Select(a => ((PrimitiveType)((ColumnExpression)a).ColumnType.EdmType).PrimitiveTypeKind == PrimitiveTypeKind.String).ToArray();
+            VisitedExpression result = pe;
 
-            // We must treat sbyte and DateTimeOffset specially so the value is read correctly
-            if (pe.Projection.Arguments.Any(a => {
-                var kind = ((PrimitiveType)((ColumnExpression)a).ColumnType.EdmType).PrimitiveTypeKind;
-                return kind == PrimitiveTypeKind.SByte || kind == PrimitiveTypeKind.DateTimeOffset;
-            }))
+            var finalProjection = pe.Projection;
+            
+            if (dmlOperation != null)
             {
-                ((NpgsqlCommand)command).ObjectResultTypes = pe.Projection.Arguments.Select(a =>
+                switch (dmlOperation.Kind)
                 {
-                    var kind = ((PrimitiveType)((ColumnExpression)a).ColumnType.EdmType).PrimitiveTypeKind;
-                    switch (kind)
-                    {
-                    case PrimitiveTypeKind.SByte:
-                        return typeof(sbyte);
-                    case PrimitiveTypeKind.DateTimeOffset:
-                        return typeof(DateTimeOffset);
-                    default:
-                        return null;
-                    }
-                }).ToArray();
+                case DbDmlOperationKind.Delete:
+                {
+                    var delOp = (DbDmlDeleteOperation)dmlOperation;
+
+                    var dmlExpr = DmlDeleteExpression.Create(pe, delOp);
+                    finalProjection = dmlExpr.GetProjection();
+                    result = dmlExpr;
+                    break;
+                }
+                case DbDmlOperationKind.Update:
+                {
+                    var updOp = (DbDmlUpdateOperation)dmlOperation;
+
+                    var dmlExpr = new DmlUpdateExpression(pe, updOp);
+                    finalProjection = dmlExpr.GetProjection();
+                    result = dmlExpr;
+                    break;
+                }
+                case DbDmlOperationKind.Insert:
+                {
+                    var insOp = (DbDmlInsertOperation)dmlOperation;
+
+                    var dmlExpr = new DmlInsertExpression(this, pe, insOp);
+                    finalProjection = dmlExpr.GetProjection();
+                    result = dmlExpr;
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException($"Unknown DML operation: {dmlOperation.Kind}.");
+                }
             }
+            
+            command.CommandText = result.ToString();
+            
+            PrepareResultTypes((NpgsqlCommand)command, finalProjection);
+        }
+
+        static void PrepareResultTypes(NpgsqlCommand command, CommaSeparatedExpression projection)
+        {
+            var unknownResultTypeList = new bool[projection.Arguments.Count];
+            Type[] objectResultTypes = null;
+
+            for (var i = 0; i < projection.Arguments.Count; i++)
+            {
+                var a = projection.Arguments[i];
+                unknownResultTypeList[i] = ((PrimitiveType)((ColumnExpression)a).ColumnType.EdmType).PrimitiveTypeKind == PrimitiveTypeKind.String;
+                var kind = ((PrimitiveType)((ColumnExpression)a).ColumnType.EdmType).PrimitiveTypeKind;
+
+                switch (kind)
+                {
+                    case PrimitiveTypeKind.SByte:
+                        SetResultType(typeof(sbyte));
+                        break;
+                    case PrimitiveTypeKind.DateTimeOffset:
+                        SetResultType(typeof(DateTimeOffset));
+                        break;
+                }
+
+                void SetResultType(Type type)
+                {
+                    objectResultTypes ??= new Type[projection.Arguments.Count];
+                    objectResultTypes[i] = type;
+                }
+            }
+
+            command.UnknownResultTypeList = unknownResultTypeList;
+            command.ObjectResultTypes = objectResultTypes;
         }
     }
 }

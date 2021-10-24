@@ -70,6 +70,8 @@ namespace Npgsql.SqlGenerators
             sqlText.Append(_literal);
             base.WriteSql(sqlText);
         }
+
+        public string Literal => _literal;
     }
 
     internal class CommaSeparatedExpression : VisitedExpression
@@ -328,11 +330,11 @@ namespace Npgsql.SqlGenerators
     {
         internal string Name { get; }
         internal TypeUsage ColumnType { get; }
-        readonly VisitedExpression _column;
+        internal readonly VisitedExpression Column;
 
         public ColumnExpression(VisitedExpression column, string columnName, TypeUsage columnType)
         {
-            _column = column;
+            Column = column;
             Name = columnName;
             ColumnType = columnType;
         }
@@ -348,9 +350,9 @@ namespace Npgsql.SqlGenerators
 
         internal override void WriteSql(StringBuilder sqlText)
         {
-            _column.WriteSql(sqlText);
+            Column.WriteSql(sqlText);
 
-            var column = _column as ColumnReferenceExpression;
+            var column = Column as ColumnReferenceExpression;
             if (column == null || column.Name != Name)
             {
                 sqlText.Append(" AS ");
@@ -366,6 +368,7 @@ namespace Npgsql.SqlGenerators
         public string Variable { get; set; }
         public string Name { get; set; }
         public string Cast { get; set; }
+        public bool QuoteName { get; set; } = true;
 
         internal override void WriteSql(StringBuilder sqlText)
         {
@@ -374,7 +377,7 @@ namespace Npgsql.SqlGenerators
                 sqlText.Append(SqlBaseGenerator.QuoteIdentifier(Variable));
                 sqlText.Append(".");
             }
-            sqlText.Append(SqlBaseGenerator.QuoteIdentifier(Name));
+            sqlText.Append(QuoteName ? SqlBaseGenerator.QuoteIdentifier(Name) : Name);
             if (Cast != null)
                 sqlText.Append("::").Append(Cast);
 
@@ -385,6 +388,9 @@ namespace Npgsql.SqlGenerators
     internal class ScanExpression : VisitedExpression
     {
         readonly string _scanString;
+
+        internal string ScanString => _scanString;
+        
         internal EntitySetBase Target { get; }
 
         public ScanExpression(string scanString, EntitySetBase target)
@@ -445,7 +451,9 @@ namespace Npgsql.SqlGenerators
                             first = false;
                         sqlText.Append(SqlBaseGenerator.QuoteIdentifier(column.Key.Item1));
                         sqlText.Append(".");
-                        sqlText.Append(SqlBaseGenerator.QuoteIdentifier(column.Key.Item2));
+                        var needQuote = !(column.Key.Item2 == DmlUtils.CtidColumnName
+                                          && column.Value == DmlUtils.CtidAlias);
+                        sqlText.Append(needQuote ? SqlBaseGenerator.QuoteIdentifier(column.Key.Item2) : column.Key.Item2);
                         if (column.Key.Item2 != column.Value)
                         {
                             sqlText.Append(" AS ");
@@ -467,25 +475,36 @@ namespace Npgsql.SqlGenerators
 
     internal class FromExpression : VisitedExpression
     {
-        readonly VisitedExpression _from;
         internal string Name { get; }
 
         public FromExpression(VisitedExpression from, string name)
         {
-            _from = from;
+            From = from;
             Name = name;
         }
 
         public bool ForceSubquery { get; set; }
 
+        public VisitedExpression From { get; }
+
+        public bool CanSkipSubquery()
+        {
+            return !ForceSubquery && From is InputExpression input && CanSkipSubquery(input);
+        }
+
+        bool CanSkipSubquery(InputExpression input)
+        {
+            return !ForceSubquery && input.Projection == null && input.Where == null && input.Distinct == false && input.OrderBy == null &&
+                   input.Skip == null && input.Limit == null;
+        }
+
         internal override void WriteSql(StringBuilder sqlText)
         {
-            var from = _from as InputExpression;
+            var from = From as InputExpression;
             if (from != null)
             {
                 var input = from;
-                if (!ForceSubquery && input.Projection == null && input.Where == null && input.Distinct == false && input.OrderBy == null &&
-                    input.Skip == null && input.Limit == null)
+                if (CanSkipSubquery(input))
                 {
                     // There is no point of writing
                     // (SELECT ? FROM <from> AS <name>) AS <name>
@@ -506,10 +525,10 @@ namespace Npgsql.SqlGenerators
             }
             else
             {
-                var wrap = !(_from is LiteralExpression || _from is ScanExpression || _from is FunctionExpression);
+                var wrap = !(From is LiteralExpression || From is ScanExpression || From is FunctionExpression);
                 if (wrap)
                     sqlText.Append("(");
-                _from.WriteSql(sqlText);
+                From.WriteSql(sqlText);
                 if (wrap)
                     sqlText.Append(")");
                 sqlText.Append(" AS ");
@@ -576,24 +595,24 @@ namespace Npgsql.SqlGenerators
 
     internal class WhereExpression : VisitedExpression
     {
-        VisitedExpression _where;
+        public VisitedExpression Condition { get; private set; }
 
         public WhereExpression(VisitedExpression where)
         {
-            _where = where;
+            Condition = where;
         }
 
         internal override void WriteSql(StringBuilder sqlText)
         {
             sqlText.Append(" WHERE ");
-            _where.WriteSql(sqlText);
+            Condition.WriteSql(sqlText);
             base.WriteSql(sqlText);
         }
 
         internal void And(VisitedExpression andAlso)
         {
             // useNewPrecedence doesn't matter here since there was no change with the AND operator
-            _where = OperatorExpression.Build(Operator.And, true, _where, andAlso);
+            Condition = OperatorExpression.Build(Operator.And, true, Condition, andAlso);
         }
     }
 
