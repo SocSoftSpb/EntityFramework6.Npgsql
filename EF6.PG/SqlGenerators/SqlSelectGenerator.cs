@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Metadata.Edm;
+using System.Text;
 
 namespace Npgsql.SqlGenerators
 {
@@ -98,6 +99,13 @@ namespace Npgsql.SqlGenerators
             
             Debug.Assert(command is NpgsqlCommand);
             Debug.Assert(_commandTree.Query is DbProjectExpression);
+
+            if (dmlOperation is DbDmlInsertOperation { FromObjectQuery: { } } insertOperation)
+            {
+                BuildInsertFromObjectQuery(command, insertOperation);
+                return;
+            }
+            
             var ve = _commandTree.Query.Accept(this);
             Debug.Assert(ve is InputExpression);
             var pe = (InputExpression)ve;
@@ -114,7 +122,7 @@ namespace Npgsql.SqlGenerators
                 {
                     var delOp = (DbDmlDeleteOperation)dmlOperation;
 
-                    var dmlExpr = DmlDeleteExpression.Create(pe, delOp);
+                    var dmlExpr = new DmlDeleteExpression(pe, delOp);
                     finalProjection = dmlExpr.GetProjection();
                     result = dmlExpr;
                     break;
@@ -147,6 +155,69 @@ namespace Npgsql.SqlGenerators
             PrepareResultTypes((NpgsqlCommand)command, finalProjection);
         }
 
+        void BuildInsertFromObjectQuery(DbCommand command, DbDmlInsertOperation opInsert)
+        {
+            var insertColumnList = new StringBuilder(256);
+            var selectColumnList = new StringBuilder(256);
+            var mapInfo = opInsert.FromQueryMapping;
+            var fromCommand = opInsert.FromStoreCommand;
+            var entitySet = opInsert.TargetEntitySet;
+
+            var nColumn = 0;
+            
+            foreach (var clm in entitySet.ElementType.Properties)
+            {
+                var mp = mapInfo.FirstOrDefault(e => e.TargetName == clm.Name);
+                if (mp == null && IsNullable(clm.TypeUsage))
+                    continue;
+                
+                if (nColumn > 0)
+                {
+                    insertColumnList.Append(", ");
+                    selectColumnList.Append(", ");
+                }
+                insertColumnList.Append(QuoteIdentifier(clm.Name));
+                if (mp == null)
+                {
+                    var sqlType = GetDbType(clm.TypeUsage.EdmType);
+                    selectColumnList.Append("CAST(").Append(GetDefaultPrimitiveLiteral(clm.TypeUsage)).Append(" AS ").Append(sqlType).Append(")");
+                }
+                else
+                {
+                    selectColumnList.Append(QuoteIdentifier(mp.SourceProperty.Name));
+                }
+                selectColumnList.Append(" AS ").Append(QuoteIdentifier(clm.Name));
+                nColumn++;
+            }
+
+            var sbCommand = new StringBuilder(512);
+            
+            if (opInsert.WithRowCount)
+                sbCommand.Append("WITH ").Append("__cte_insert__").Append(" AS (").AppendLine();
+            
+            sbCommand.Append("INSERT" + " INTO ");
+
+            if (!string.IsNullOrEmpty(entitySet.Schema))
+                sbCommand.Append(QuoteIdentifier(entitySet.Schema)).Append(".");
+
+            sbCommand.Append(QuoteIdentifier(entitySet.Table));
+            
+            sbCommand.AppendLine().Append('(').Append(insertColumnList).Append(')').AppendLine()
+                .Append("SELECT ").Append(selectColumnList).Append(" FROM (");
+
+            sbCommand.AppendLine().Append(fromCommand.CommandText)
+                .AppendLine().Append(") AS x__subquery");
+
+            if (opInsert.WithRowCount)
+                sbCommand
+                    .AppendLine()
+                    .Append("    RETURNING 1").AppendLine()
+                    .Append(")").AppendLine()
+                    .Append("SELECT " + "count(1) FROM ").Append("__cte_insert__");
+
+            command.CommandText = sbCommand.ToString();
+        }
+
         static void PrepareResultTypes(NpgsqlCommand command, CommaSeparatedExpression projection)
         {
             var unknownResultTypeList = new bool[projection.Arguments.Count];
@@ -177,6 +248,41 @@ namespace Npgsql.SqlGenerators
 
             command.UnknownResultTypeList = unknownResultTypeList;
             command.ObjectResultTypes = objectResultTypes;
+        }
+        
+        private static string GetDefaultPrimitiveLiteral(TypeUsage storeTypeUsage)
+        {
+            Debug.Assert(BuiltInTypeKind.PrimitiveType == storeTypeUsage.EdmType.BuiltInTypeKind, "Type must be primitive type");
+
+            var primitiveTypeKind = GetPrimitiveTypeKind(storeTypeUsage);
+            
+            switch (primitiveTypeKind)
+            {
+            case PrimitiveTypeKind.Byte:
+            case PrimitiveTypeKind.Decimal:
+            case PrimitiveTypeKind.Boolean:
+            case PrimitiveTypeKind.Double:
+            case PrimitiveTypeKind.Single:
+            case PrimitiveTypeKind.SByte:
+            case PrimitiveTypeKind.Int16:
+            case PrimitiveTypeKind.Int32:
+            case PrimitiveTypeKind.Int64:
+                return "0";
+            case PrimitiveTypeKind.Binary:
+                return "E''";
+            case PrimitiveTypeKind.DateTime:
+                return "'00010101'";
+            case PrimitiveTypeKind.Guid:
+                return "'00000000-0000-0000-0000-000000000000'";
+            case PrimitiveTypeKind.String:
+                return "''";
+            case PrimitiveTypeKind.Time:
+                return "'0'";
+            case PrimitiveTypeKind.DateTimeOffset:
+                return "'00010101'";
+            default:
+                throw new InvalidOperationException($"PrimitiveTypeKind {primitiveTypeKind} is not supported.");
+            }
         }
     }
 }

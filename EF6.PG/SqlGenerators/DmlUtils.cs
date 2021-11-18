@@ -258,114 +258,116 @@ namespace Npgsql.SqlGenerators
         
     }
 
-    internal abstract class DmlDeleteExpression : DmlExpressionBase
+    internal sealed class DmlDeleteExpression : DmlExpressionBase
     {
-        protected override bool WithRowCount { get; }
+        const string DeleteTargetName = "__DELETE_TARGET__";
+        const string DeleteSourceName = "__DELETE_SOURCE__";
+        
+        protected override bool WithRowCount => DeleteOp.WithRowCount;
+        
+        protected override string CteRowCountName => "__cte_delete__";
+        
+        InputExpression InputExpression { get; }
+        
+        DbDmlDeleteOperation DeleteOp { get; }
 
-        protected sealed override string CteRowCountName => "__cte_delete__"; 
+        FromExpression Target { get; set; }
 
-        protected DmlDeleteExpression(bool withRowCount)
+        bool _isSimpleForm;
+        
+        public DmlDeleteExpression(InputExpression inputExpression, DbDmlDeleteOperation deleteOp)
         {
-            WithRowCount = withRowCount;
+            InputExpression = inputExpression; 
+            DeleteOp = deleteOp;
+            
+            AnalyzeInputExpression();
         }
-
-        public static DmlDeleteExpression Create(InputExpression inputExpression, DbDmlDeleteOperation deleteOp)
+        
+        void AnalyzeInputExpression()
         {
-            if (inputExpression == null)
-                throw new ArgumentNullException(nameof(inputExpression));
+            if (InputExpression.OrderBy != null)
+                throw new InvalidOperationException("OrderBy is not supported in Delete queries.");
+            if (InputExpression.GroupBy != null)
+                throw new InvalidOperationException("GroupBy is not supported in Delete queries.");
+            if (InputExpression.Distinct)
+                throw new InvalidOperationException("Distinct is not supported in Delete queries.");
 
-            if (inputExpression.Distinct)
-                throw new InvalidOperationException("Batch delete is not supported Distinct.");
-
-            if (inputExpression.GroupBy != null)
-                throw new InvalidOperationException("Batch delete is not supported GroupBy.");
-
-            var isSimple = (inputExpression.OrderBy == null)
-                           && (inputExpression.Skip == null)
-                           && (inputExpression.Limit == null);
-
-            if (isSimple && AnalyzeFrom(deleteOp, inputExpression, out var target, out var fromRevisited, out var joinCondition))
+            if (DeleteOp.Limit >= 0)
             {
-                inputExpression.From = fromRevisited;
+                if (InputExpression.Limit != null || InputExpression.Skip != null)
+                    throw new InvalidOperationException("Take / Skip is not supported in Updatable queries.");
+                InputExpression.Limit = new LimitExpression(new LiteralExpression(DeleteOp.Limit.ToString()));
+            }
+
+            _isSimpleForm = AnalyzeFrom(DeleteOp, InputExpression, out var target, out var fromRevisited, out var joinCondition);
+            if (_isSimpleForm)
+            {
+                InputExpression.From = fromRevisited;
 
                 if (joinCondition != null)
                 {
                     var where = new WhereExpression(joinCondition);
-                    if (inputExpression.Where != null)
-                        where.And(inputExpression.Where.Condition);
-                    inputExpression.Where = where;
+                    if (InputExpression.Where != null)
+                        where.And(InputExpression.Where.Condition);
+                    InputExpression.Where = where;
                 }
 
-                return new DmlSimpleDeleteExpression(inputExpression, deleteOp.WithRowCount, target);
+                Target = target;
             }
             else
             {
-                return new DmlDeleteFromSelectExpression(inputExpression, deleteOp.TargetEntitySet, deleteOp.WithRowCount);
+                // Find target Extent for subquery
+                var dmlTarget = new FindDmlTargetVisitor(DeleteOp.TargetEntitySet);
+                dmlTarget.PullUpCtid(InputExpression, true);
+
+                if (!dmlTarget.Success)
+                    throw new InvalidOperationException($"Can't project CTID column for query {InputExpression}.");
+
+                Target = dmlTarget.TargetFrom;
             }
-        }
-    }
-
-    internal sealed class DmlSimpleDeleteExpression : DmlDeleteExpression
-    {
-        InputExpression InputExpression { get; }
-        FromExpression Target { get; }
-
-        public DmlSimpleDeleteExpression(InputExpression inputExpr, bool withRowCount, FromExpression target) : base(withRowCount)
-        {
-            InputExpression = inputExpr;
-            Target = target;
         }
 
         protected override void WriteDmlCommand(StringBuilder sqlText)
         {
-            sqlText.Append("DELETE ").Append(" FROM ");
+            if (!_isSimpleForm)
+                WriteSubquerySql(sqlText);
+            else
+                WriteSimpleSql(sqlText);
+        }
+
+        void WriteSimpleSql(StringBuilder sqlText)
+        {
+            sqlText.Append("DELETE " + "FROM ");
             Target.WriteSql(sqlText);
-            
+            sqlText.AppendLine();
+
             if (InputExpression.From != null)
             {
-                sqlText.AppendLine();
                 sqlText.Append("USING ");
                 InputExpression.From.WriteSql(sqlText);
-            }
-
-            if (InputExpression.Where != null)
-            {
                 sqlText.AppendLine();
-                InputExpression.Where?.WriteSql(sqlText);
             }
-        }
-    }
-
-    internal sealed class DmlDeleteFromSelectExpression : DmlDeleteExpression
-    {
-        InputExpression InputExpression { get; }
-        EntitySet TargetEntitySet { get; }
-
-        public DmlDeleteFromSelectExpression(InputExpression inputExpression, EntitySet targetEntitySet, bool withRowCount) : base(withRowCount)
-        {
-            InputExpression = inputExpression;
-            TargetEntitySet = targetEntitySet;
-        }
-
-        protected override void WriteDmlCommand(StringBuilder sqlText)
-        {
-            sqlText.Append("DELETE" + " FROM ");
-            if (!string.IsNullOrEmpty(TargetEntitySet.Schema))
-                sqlText.Append(SqlBaseGenerator.QuoteIdentifier(TargetEntitySet.Schema)).Append(".");
             
-            sqlText
-                .Append(SqlBaseGenerator.QuoteIdentifier(TargetEntitySet.Table))
-                .Append(" WHERE CTID IN (")
-                .AppendLine();
+            InputExpression.Where?.WriteSql(sqlText);
+        }
 
+        void WriteSubquerySql(StringBuilder sqlText)
+        {
+            sqlText.Append("DELETE " + "FROM ");
+            var target = new FromExpression(Target.From, DeleteTargetName);
+            target.WriteSql(sqlText);
+            sqlText.AppendLine();
+            sqlText.Append("USING (").AppendLine();
             InputExpression.WriteSql(sqlText);
-            sqlText.Append(" FOR UPDATE");
-
-            sqlText.AppendLine()
-                .Append(")");
+            sqlText.AppendLine().Append("FOR UPDATE");
+            sqlText.AppendLine().Append(") AS ").Append(SqlBaseGenerator.QuoteIdentifier(DeleteSourceName))
+                .AppendLine().Append("WHERE ")
+                .Append(SqlBaseGenerator.QuoteIdentifier(DeleteTargetName)).Append(".").Append(DmlUtils.CtidColumnName)
+                .Append(" = ")
+                .Append(SqlBaseGenerator.QuoteIdentifier(DeleteSourceName)).Append(".").Append(SqlBaseGenerator.QuoteIdentifier(DmlUtils.CtidAlias));
         }
     }
-
+    
     internal sealed class DmlUpdateExpression : DmlExpressionBase
     {
         const string UpdateTargetName = "__UPDATE_TARGET__";

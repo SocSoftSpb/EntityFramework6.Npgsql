@@ -12,6 +12,8 @@ using System.Data.Entity.Core.Mapping;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Data.Entity.Core.Objects;
 using System.Data.Entity.Infrastructure;
+using System.Linq.Expressions;
+using System.Reflection;
 using NpgsqlTypes;
 
 // ReSharper disable once CheckNamespace
@@ -363,6 +365,63 @@ namespace EntityFramework6.Npgsql.Tests
 
             var compiledModel = dbModel.Compile();
             return compiledModel;
+        }
+        
+        private IQueryProvider GetQueryProvider()
+        {
+            var objectContext = ((IObjectContextAdapter)this).ObjectContext;
+            var piQueryProvider = typeof(ObjectContext).GetProperty("QueryProvider", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                  ?? throw new NullReferenceException("QueryProvider");
+            return (IQueryProvider)piQueryProvider.GetValue(objectContext);
+        }
+
+        public IQueryable<T> DynamicQuery<T>(string query)
+        {
+            var options = DynamicQueryUtils.CreateDynamicQueryOptions(typeof(T));
+            return DynamicQuery<T>(query, options);
+        }
+
+        public IQueryable<T> DynamicQuery<T>(string query, DynamicEntitySetOptions options)
+        {
+            var queryProvider = GetQueryProvider();
+            var queryExpression = DynamicQueryUtils.CreateDynamicQueryExpression(typeof(T), query, options);
+
+            return queryProvider.CreateQuery<T>(queryExpression);
+        }
+
+        public DynamicEntitySetOptions CreateDynamicQueryOptions(Type elementType)
+        {
+            return DynamicQueryUtils.CreateDynamicQueryOptions(elementType);
+        }
+        
+        internal static class DynamicQueryUtils
+        {
+            private static readonly MethodInfo _miDynamicSql;
+
+            static DynamicQueryUtils()
+            {
+                Func<string, DynamicEntitySetOptions, IQueryable<object>> f = DynamicSqlUtilities.DynamicSql<object>;
+                _miDynamicSql = f.Method.GetGenericMethodDefinition();
+            }
+            
+            public static DynamicEntitySetOptions CreateDynamicQueryOptions(Type elementType)
+            {
+                var options = new DynamicEntitySetOptions();
+                foreach (var pi in elementType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    var attr = pi.GetCustomAttribute<NotMappedAttribute>();
+                    if (attr != null)
+                        continue;
+                    options.Columns.Add(new ColumnOption(pi));
+                }
+
+                return options;
+            }
+            
+            public static Expression CreateDynamicQueryExpression(Type elementType, string query, DynamicEntitySetOptions options)
+            {
+                return Expression.Call(_miDynamicSql.MakeGenericMethod(elementType), Expression.Constant(query, typeof(string)), Expression.Constant(options, typeof(DynamicEntitySetOptions)));
+            }
         }
     }
 }

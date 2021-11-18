@@ -784,16 +784,29 @@ namespace Npgsql.SqlGenerators
     internal class LimitExpression : VisitedExpression
     {
         internal VisitedExpression Arg { get; set; }
+        
+        internal bool WithTies { get; }
 
-        public LimitExpression(VisitedExpression arg)
+        public LimitExpression(VisitedExpression arg, bool withTies = false)
         {
             Arg = arg;
+            WithTies = withTies;
         }
 
         internal override void WriteSql(StringBuilder sqlText)
         {
-            sqlText.Append(" LIMIT ");
-            Arg.WriteSql(sqlText);
+            if (WithTies)
+            {
+                sqlText.Append(" FETCH FIRST ");
+                Arg.WriteSql(sqlText);
+                sqlText.Append(" ROWS WITH TIES");
+            }
+            else
+            {
+                sqlText.Append(" LIMIT ");
+                Arg.WriteSql(sqlText);
+            }
+
             base.WriteSql(sqlText);
         }
     }

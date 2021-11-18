@@ -2,11 +2,11 @@
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.Entity;
+using System.Data.Entity.Core.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
-using System.Data.Entity.Core.Common.CommandTrees.Internal;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Linq;
 using JetBrains.Annotations;
@@ -207,7 +207,7 @@ namespace Npgsql.SqlGenerators
                     n.Last.Exp.Limit.Arg = least;
                 }
                 else
-                    n.Last.Exp.Limit = new LimitExpression(exp.Limit.Accept(this));
+                    n.Last.Exp.Limit = new LimitExpression(exp.Limit.Accept(this), exp.WithTies);
                 break;
             }
             case DbExpressionKind.NewInstance:
@@ -1237,10 +1237,6 @@ namespace Npgsql.SqlGenerators
                     Debug.Assert(args.Count == 2);
                     return NullIf(args[0].Accept(this), args[1].Accept(this));
                 
-                case "dml_" + nameof(DbDmlFunctions.DeleteMarker):
-                case "dml_" + nameof(DbDmlFunctions.DeleteMarkerRowCount):
-                    return new LiteralExpression(DmlUtils.CtidColumnName);
-                    
                 default:
                     throw new NotSupportedException("NotSupported " + function.Name);
                 }
@@ -1637,6 +1633,17 @@ namespace Npgsql.SqlGenerators
         {
             // This is overridden in the other visitors
             throw new NotImplementedException("New in Entity Framework 6");
+        }
+        
+        internal static bool IsNullable(TypeUsage type)
+        {
+            var facet = type.Facets.SingleOrDefault(f => f.Name == DbProviderManifest.NullableFacetName);
+            return facet != null && facet.Value != null && (bool)facet.Value;
+        }
+        
+        internal static PrimitiveTypeKind GetPrimitiveTypeKind(TypeUsage type)
+        {
+            return ((PrimitiveType)type.EdmType).PrimitiveTypeKind;
         }
     }
 }
