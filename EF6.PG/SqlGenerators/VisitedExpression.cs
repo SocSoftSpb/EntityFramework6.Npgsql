@@ -425,9 +425,9 @@ namespace Npgsql.SqlGenerators
 
         public InputExpression() { }
 
-        public InputExpression(VisitedExpression from, string asName)
+        public InputExpression(VisitedExpression from, string asName, VisitedExpression columnSpecification)
         {
-            From = new FromExpression(from, asName);
+            From = new FromExpression(from, asName, columnSpecification);
         }
 
         internal override void WriteSql(StringBuilder sqlText)
@@ -477,15 +477,18 @@ namespace Npgsql.SqlGenerators
     {
         internal string Name { get; }
 
-        public FromExpression(VisitedExpression from, string name)
+        public FromExpression(VisitedExpression from, string name, VisitedExpression columnSpecification)
         {
             From = from;
             Name = name;
+            ColumnSpecification = columnSpecification;
         }
 
         public bool ForceSubquery { get; set; }
 
         public VisitedExpression From { get; }
+        
+        public VisitedExpression ColumnSpecification { get; }
 
         public bool CanSkipSubquery()
         {
@@ -521,6 +524,7 @@ namespace Npgsql.SqlGenerators
                     input.WriteSql(sqlText);
                     sqlText.Append(") AS ");
                     sqlText.Append(SqlBaseGenerator.QuoteIdentifier(Name));
+                    ColumnSpecification?.WriteSql(sqlText);
                 }
             }
             else
@@ -533,6 +537,7 @@ namespace Npgsql.SqlGenerators
                     sqlText.Append(")");
                 sqlText.Append(" AS ");
                 sqlText.Append(SqlBaseGenerator.QuoteIdentifier(Name));
+                ColumnSpecification?.WriteSql(sqlText);
             }
             base.WriteSql(sqlText);
         }
@@ -908,9 +913,12 @@ namespace Npgsql.SqlGenerators
         public static readonly Operator NotLike = new Operator("NOT LIKE", 3, 6, 6);
         public static readonly Operator SimilarTo = new Operator("SIMILAR TO", 6, 6);
         public static readonly Operator NotSimilarTo = new Operator("NOT SIMILAR TO", 3, 6, 6);
+        public static readonly Operator Between = new Operator("BETWEEN", 6, 6);
+        public static readonly Operator NotBetween = new Operator("NOT BETWEEN", 3, 6, 6);
         public static readonly Operator LessThan = new Operator("<", 5, 5);
         public static readonly Operator GreaterThan = new Operator(">", 5, 5);
         public new static readonly Operator Equals = new Operator("=", 4, 5, UnaryTypes.Binary, true);
+        public static readonly Operator EqualsAny = new Operator("= ANY", 4, 5, UnaryTypes.Binary, true);
         public static readonly Operator Not = new Operator("NOT", 3, 3, UnaryTypes.Prefix, true);
         public static readonly Operator And = new Operator("AND", 2, 2);
         public static readonly Operator Or = new Operator("OR", 1, 1);
@@ -938,10 +946,39 @@ namespace Npgsql.SqlGenerators
                 { NotIn, In },
                 { Like, NotLike },
                 { NotLike, Like },
+                { Between, NotBetween },
+                { NotBetween, Between },
                 { LessThan, GreaterThanOrEquals },
                 { GreaterThan, LessThanOrEquals },
                 { Equals, NotEquals }
             };
+        }
+    }
+
+    internal class BetweenBoundsExpression : VisitedExpression
+    {
+        readonly VisitedExpression _begin;
+        readonly VisitedExpression _end;
+
+        public BetweenBoundsExpression(VisitedExpression begin, VisitedExpression end)
+        {
+            _begin = begin ?? throw new ArgumentNullException(nameof(begin));
+            _end = end ?? throw new ArgumentNullException(nameof(end));
+        }
+
+        internal override void WriteSql(StringBuilder sqlText)
+        {
+            sqlText.Append("(");
+            _begin.WriteSql(sqlText);
+            sqlText.Append(")");
+
+            sqlText.Append(" AND ");
+            
+            sqlText.Append("(");
+            _end.WriteSql(sqlText);
+            sqlText.Append(")");
+            
+            base.WriteSql(sqlText);
         }
     }
 
@@ -1016,30 +1053,45 @@ namespace Npgsql.SqlGenerators
 
             bool wrapLeft, wrapRight;
 
-            if (!_useNewPrecedences)
+            if (_op == Operator.Between || _op == Operator.NotBetween)
             {
-                wrapLeft = leftOp != null && (_op.RightAssoc ? leftOp._op.RightPrecedence <= _op.LeftPrecedence : leftOp._op.RightPrecedence < _op.LeftPrecedence);
-                wrapRight = rightOp != null && (!_op.RightAssoc ? rightOp._op.LeftPrecedence <= _op.RightPrecedence : rightOp._op.LeftPrecedence < _op.RightPrecedence);
+                wrapLeft = true;
+                wrapRight = false;
             }
             else
             {
-                wrapLeft = leftOp != null && (_op.RightAssoc ? leftOp._op.NewPrecedence <= _op.NewPrecedence : leftOp._op.NewPrecedence < _op.NewPrecedence);
-                wrapRight = rightOp != null && (!_op.RightAssoc ? rightOp._op.NewPrecedence <= _op.NewPrecedence : rightOp._op.NewPrecedence < _op.NewPrecedence);
+                if (!_useNewPrecedences)
+                {
+                    wrapLeft = leftOp != null && (_op.RightAssoc ? leftOp._op.RightPrecedence <= _op.LeftPrecedence : leftOp._op.RightPrecedence < _op.LeftPrecedence);
+                    wrapRight = rightOp != null && (!_op.RightAssoc ? rightOp._op.LeftPrecedence <= _op.RightPrecedence : rightOp._op.LeftPrecedence < _op.RightPrecedence);
+                }
+                else
+                {
+                    wrapLeft = leftOp != null && (_op.RightAssoc ? leftOp._op.NewPrecedence <= _op.NewPrecedence : leftOp._op.NewPrecedence < _op.NewPrecedence);
+                    wrapRight = rightOp != null && (!_op.RightAssoc ? rightOp._op.NewPrecedence <= _op.NewPrecedence : rightOp._op.NewPrecedence < _op.NewPrecedence);
+                }
+
+                // Avoid parentheses for prefix operators if possible,
+                // e.g. BitwiseNot: (a & (~ b)) & c is written as a & ~ b & c
+                // but (a + (~ b)) + c must be written as a + (~ b) + c
+                if (!_useNewPrecedences)
+                {
+                    if (wrapRight && rightOp._left == null && (rightParent == null || (!rightParent._op.RightAssoc
+                            ? rightOp._op.RightPrecedence >= rightParent._op.LeftPrecedence
+                            : rightOp._op.RightPrecedence > rightParent._op.LeftPrecedence)))
+                        wrapRight = false;
+                }
+                else
+                {
+                    if (wrapRight && rightOp._left == null && (rightParent == null || (!rightParent._op.RightAssoc
+                            ? rightOp._op.NewPrecedence >= rightParent._op.NewPrecedence
+                            : rightOp._op.NewPrecedence > rightParent._op.NewPrecedence)))
+                        wrapRight = false;
+                }
             }
 
-            // Avoid parentheses for prefix operators if possible,
-            // e.g. BitwiseNot: (a & (~ b)) & c is written as a & ~ b & c
-            // but (a + (~ b)) + c must be written as a + (~ b) + c
-            if (!_useNewPrecedences)
-            {
-                if (wrapRight && rightOp._left == null && (rightParent == null || (!rightParent._op.RightAssoc ? rightOp._op.RightPrecedence >= rightParent._op.LeftPrecedence : rightOp._op.RightPrecedence > rightParent._op.LeftPrecedence)))
-                    wrapRight = false;
-            }
-            else
-            {
-                if (wrapRight && rightOp._left == null && (rightParent == null || (!rightParent._op.RightAssoc ? rightOp._op.NewPrecedence >= rightParent._op.NewPrecedence : rightOp._op.NewPrecedence > rightParent._op.NewPrecedence)))
-                    wrapRight = false;
-            }
+            if (_op == Operator.EqualsAny)
+                wrapRight = true;
 
             if (_left != null)
             {

@@ -7,9 +7,9 @@ namespace Npgsql.SqlGenerators
     /// </summary>
     internal class NameAndInputExpression
     {
-        public string AsName { get; set; }
-        public InputExpression Exp { get; set; }
-
+        public string AsName { get; }
+        public InputExpression Exp { get; }
+        
         public NameAndInputExpression(string asName, InputExpression exp)
         {
             AsName = asName;

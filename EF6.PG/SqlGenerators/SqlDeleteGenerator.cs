@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Data.Common;
 using System.Data.Entity.Core.Common.CommandTrees;
+using System.Data.Entity.Core.Metadata.Edm;
 
 namespace Npgsql.SqlGenerators
 {
@@ -9,7 +10,7 @@ namespace Npgsql.SqlGenerators
         readonly DbDeleteCommandTree _commandTree;
         string _tableName;
 
-        public SqlDeleteGenerator(DbDeleteCommandTree commandTree)
+        public SqlDeleteGenerator(MetadataWorkspace metadataWorkspace, DbDeleteCommandTree commandTree) : base(metadataWorkspace)
         {
             _commandTree = commandTree;
         }

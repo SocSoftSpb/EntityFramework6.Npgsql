@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text;
 using JetBrains.Annotations;
 using System.Data.Entity.Core.Common;
@@ -10,6 +11,7 @@ using Npgsql.SqlGenerators;
 using DbConnection = System.Data.Common.DbConnection;
 using DbCommand = System.Data.Common.DbCommand;
 using System.Data.Common;
+using NpgsqlTypes;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -38,11 +40,7 @@ namespace Npgsql
 
             foreach (var parameter in commandTree.Parameters)
             {
-                var dbParameter = new NpgsqlParameter
-                {
-                    ParameterName = parameter.Key,
-                    NpgsqlDbType = NpgsqlProviderManifest.GetNpgsqlDbType(((PrimitiveType)parameter.Value.EdmType).PrimitiveTypeKind)
-                };
+                var dbParameter = CreateNpgsqlParameter(parameter.Key, parameter.Value);
                 command.Parameters.Add(dbParameter);
             }
 
@@ -51,9 +49,35 @@ namespace Npgsql
             return command;
         }
 
-        protected override void SetDbParameterValue(DbParameter parameter, TypeUsage parameterType, object value)
+        static NpgsqlParameter CreateNpgsqlParameter(string parameterName, TypeUsage typeUsage)
         {
-            base.SetDbParameterValue(parameter, parameterType, value);
+            NpgsqlDbType npgsqlDbType;
+
+            if (typeUsage.EdmType.BuiltInTypeKind == BuiltInTypeKind.VectorParameterType)
+            {
+                // ReSharper disable once BitwiseOperatorOnEnumWithoutFlags
+                var primitiveTypeKind = ((VectorParameterType)typeUsage.EdmType).ElementType.PrimitiveTypeKind;
+                var elType = NpgsqlProviderManifest.GetNpgsqlDbType(primitiveTypeKind);
+                if (elType == NpgsqlDbType.Unknown && primitiveTypeKind == PrimitiveTypeKind.String)
+                    elType = NpgsqlDbType.Text;
+                npgsqlDbType = NpgsqlDbType.Array | elType;
+            }
+            else
+            {
+                npgsqlDbType = NpgsqlProviderManifest.GetNpgsqlDbType(((PrimitiveType)typeUsage.EdmType).PrimitiveTypeKind);
+            }
+
+            var dbParameter = new NpgsqlParameter
+            {
+                ParameterName = parameterName,
+                NpgsqlDbType = npgsqlDbType
+            };
+            return dbParameter;
+        }
+
+        protected override void SetDbParameterValue(MetadataWorkspace metadataWorkspace, DbParameter parameter, TypeUsage parameterType, object value)
+        {
+            base.SetDbParameterValue(metadataWorkspace, parameter, parameterType, value);
             ConvertValueToNumericIfEnum(parameter);
         }
 
@@ -75,18 +99,20 @@ namespace Npgsql
         {
             SqlBaseGenerator sqlGenerator;
 
+            var metadataWorkspace = commandTree.MetadataWorkspace;
+
             DbQueryCommandTree select;
             DbInsertCommandTree insert;
             DbUpdateCommandTree update;
             DbDeleteCommandTree delete;
             if ((select = commandTree as DbQueryCommandTree) != null)
-                sqlGenerator = new SqlSelectGenerator(select);
+                sqlGenerator = new SqlSelectGenerator(metadataWorkspace, select);
             else if ((insert = commandTree as DbInsertCommandTree) != null)
-                sqlGenerator = new SqlInsertGenerator(insert);
+                sqlGenerator = new SqlInsertGenerator(metadataWorkspace, insert);
             else if ((update = commandTree as DbUpdateCommandTree) != null)
-                sqlGenerator = new SqlUpdateGenerator(update);
+                sqlGenerator = new SqlUpdateGenerator(metadataWorkspace, update);
             else if ((delete = commandTree as DbDeleteCommandTree) != null)
-                sqlGenerator = new SqlDeleteGenerator(delete);
+                sqlGenerator = new SqlDeleteGenerator(metadataWorkspace, delete);
             else
             {
                 // TODO: get a message (unsupported DbCommandTree type)

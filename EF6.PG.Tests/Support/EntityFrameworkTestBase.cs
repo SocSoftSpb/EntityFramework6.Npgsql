@@ -8,10 +8,12 @@ using System.Data.Entity;
 using System.Linq;
 using System.Text;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Data.Entity.Core.EntityClient;
 using System.Data.Entity.Core.Mapping;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Data.Entity.Core.Objects;
 using System.Data.Entity.Infrastructure;
+using System.Data.SqlClient;
 using System.Linq.Expressions;
 using System.Reflection;
 using NpgsqlTypes;
@@ -225,6 +227,11 @@ namespace EntityFramework6.Npgsql.Tests
             dbModelBuilder.Entity<Post1>().Map(e => e.Requires("dDd").HasValue((byte)25));
             dbModelBuilder.Entity<Post2>().Map(e => e.Requires("dDd").HasValue((byte)55));
 
+            dbModelBuilder.VectorParameter<int>()
+                .HasStoreType("Objects", "IntParam");
+            dbModelBuilder.VectorParameter<string>()
+                .HasStoreType("Objects", "StringParam");
+
             // Import function
             var dbModel = dbModelBuilder.Build(connection);
             var edmType = PrimitiveType.GetEdmPrimitiveType(PrimitiveTypeKind.Int32);
@@ -362,7 +369,7 @@ namespace EntityFramework6.Npgsql.Tests
                     getBlogsFunc,
                     new FunctionImportResultMapping(),
                     dbModel.ConceptualToStoreMapping));
-
+            
             var compiledModel = dbModel.Compile();
             return compiledModel;
         }
@@ -424,4 +431,25 @@ namespace EntityFramework6.Npgsql.Tests
             }
         }
     }
+    
+    public class BloggingObjectContext : ObjectContext
+    {
+        public BloggingObjectContext(string connectionString) : base(CreateConnection(connectionString), true)
+        {
+                
+        }
+
+        private static EntityConnection CreateConnection(string connectionString)
+        {
+            using (var context = new BloggingContext(connectionString))
+            {
+                var objectContext = ((IObjectContextAdapter)context).ObjectContext;
+                return new EntityConnection(objectContext.MetadataWorkspace, new NpgsqlConnection(connectionString), true);
+            }
+        }
+            
+        public ObjectSet<Post> Posts => CreateObjectSet<Post>();
+    }
+
+
 }

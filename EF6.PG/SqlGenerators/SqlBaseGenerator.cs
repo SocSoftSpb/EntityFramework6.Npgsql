@@ -17,6 +17,7 @@ namespace Npgsql.SqlGenerators
 {
     internal abstract class SqlBaseGenerator : DbExpressionVisitor<VisitedExpression>
     {
+        protected readonly MetadataWorkspace MetadataWorkspace;
         internal NpgsqlCommand Command;
         internal bool CreateParametersForConstants;
         bool _useNewPrecedences;
@@ -27,7 +28,7 @@ namespace Npgsql.SqlGenerators
         protected uint ParameterCount;
         
         protected virtual DbDmlOperation DmlOperation => null;
-
+        
         internal Version Version
         {
             get { return _version; }
@@ -62,9 +63,14 @@ namespace Npgsql.SqlGenerators
             {"operator_tsquery_is_contained",Operator.QueryIsContained}
         };
 
+        protected SqlBaseGenerator(MetadataWorkspace metadataWorkspace)
+        {
+            MetadataWorkspace = metadataWorkspace;
+        }
+
         void EnterExpression(PendingProjectsNode n) => CurrentExpressions.Add(n.Last.Exp);
         void LeaveExpression(PendingProjectsNode n) => CurrentExpressions.Remove(n.Last.Exp);
-
+        
         protected string NextAlias() => "Alias" + AliasCounter++;
 
         bool IsCompatible(InputExpression child, DbExpressionKind parentKind)
@@ -115,7 +121,7 @@ namespace Npgsql.SqlGenerators
         {
             var n = VisitInputWithBinding(expression, childBindingName);
             if (!IsCompatible(n.Last.Exp, parentKind))
-                n.Selects.Add(new NameAndInputExpression(parentBindingName, new InputExpression(n.Last.Exp, n.Last.AsName)));
+                n.Selects.Add(new NameAndInputExpression(parentBindingName, new InputExpression(n.Last.Exp, n.Last.AsName, null)));
             return n;
         }
 
@@ -127,7 +133,7 @@ namespace Npgsql.SqlGenerators
             case DbExpressionKind.Scan:
             {
                 var scan = (ScanExpression)expression.Accept(this);
-                var input = new InputExpression(scan, bindingName);
+                var input = new InputExpression(scan, bindingName, null);
                 n = new PendingProjectsNode(bindingName, input);
 
                 break;
@@ -180,7 +186,7 @@ namespace Npgsql.SqlGenerators
                 {
                     var prev = n.Last.Exp;
                     var prevName = n.Last.AsName;
-                    var input = new InputExpression(prev, prevName);
+                    var input = new InputExpression(prev, prevName, null);
                     n.Selects.Add(new NameAndInputExpression(bindingName, input));
 
                     // We need to copy all the projected columns so the DISTINCT keyword will work on the correct columns
@@ -240,7 +246,7 @@ namespace Npgsql.SqlGenerators
                         result.Append(visitedColumn);
                     }
                     result.Append(")");
-                    n = new PendingProjectsNode(bindingName, new InputExpression(result, bindingName));
+                    n = new PendingProjectsNode(bindingName, new InputExpression(result, bindingName, null));
                 }
                 else
                 {
@@ -248,7 +254,7 @@ namespace Npgsql.SqlGenerators
                     var result = new LiteralExpression("(SELECT ");
                     result.Append(new CastExpression(new LiteralExpression("NULL"), GetDbType(type.EdmType)));
                     result.Append(" LIMIT 0)");
-                    n = new PendingProjectsNode(bindingName, new InputExpression(result, bindingName));
+                    n = new PendingProjectsNode(bindingName, new InputExpression(result, bindingName, null));
                 }
                 break;
             }
@@ -273,7 +279,7 @@ namespace Npgsql.SqlGenerators
                 };
                 func(exp.Left);
                 func(exp.Right);
-                var input = new InputExpression(new CombinedProjectionExpression(expression.ExpressionKind, list), bindingName);
+                var input = new InputExpression(new CombinedProjectionExpression(expression.ExpressionKind, list), bindingName, null);
                 n = new PendingProjectsNode(bindingName, input);
                 break;
             }
@@ -284,7 +290,7 @@ namespace Npgsql.SqlGenerators
                 var input = child.Last.Exp;
                 var enterScope = false;
                 if (!IsCompatible(input, expression.ExpressionKind))
-                    input = new InputExpression(input, child.Last.AsName);
+                    input = new InputExpression(input, child.Last.AsName, null);
                 else
                     enterScope = true;
 
@@ -343,7 +349,7 @@ namespace Npgsql.SqlGenerators
                 var input = child.Last.Exp;
                 var enterScope = false;
                 if (!IsCompatible(input, expression.ExpressionKind))
-                    input = new InputExpression(input, child.Last.AsName);
+                    input = new InputExpression(input, child.Last.AsName, null);
                 else enterScope = true;
 
                 if (enterScope) EnterExpression(child);
@@ -397,8 +403,8 @@ namespace Npgsql.SqlGenerators
             case DbExpressionKind.Function:
             {
                 var function = (DbFunctionExpression)expression;
-                var input = new InputExpression(
-                    VisitFunction(function.Function, function.Arguments, function.ResultType, function.Partitions, function.SortOrder), bindingName);
+                var visitedFunc = VisitFunction(function.Function, function.Arguments, function.ResultType, function.Partitions, function.SortOrder, out var columnSpec);
+                var input = new InputExpression(visitedFunc, bindingName, columnSpec);
 
                 n = new PendingProjectsNode(bindingName, input);
                 break;
@@ -465,7 +471,7 @@ namespace Npgsql.SqlGenerators
             {
                 var l = VisitInputWithBinding(left, leftName);
                 l.JoinParent = n;
-                join.Left = new FromExpression(l.Last.Exp, l.Last.AsName);
+                join.Left = new FromExpression(l.Last.Exp, l.Last.AsName, null);
             }
 
             if (joinType == DbExpressionKind.OuterApply || joinType == DbExpressionKind.CrossApply)
@@ -474,7 +480,7 @@ namespace Npgsql.SqlGenerators
                 var r = VisitInputWithBinding(right, rightName);
                 LeaveExpression(n);
                 r.JoinParent = n;
-                join.Right = new FromExpression(r.Last.Exp, r.Last.AsName) { ForceSubquery = true };
+                join.Right = new FromExpression(r.Last.Exp, r.Last.AsName, null) { ForceSubquery = true };
             }
             else
             {
@@ -484,7 +490,7 @@ namespace Npgsql.SqlGenerators
                 {
                     var r = VisitInputWithBinding(right, rightName);
                     r.JoinParent = n;
-                    join.Right = new FromExpression(r.Last.Exp, r.Last.AsName);
+                    join.Right = new FromExpression(r.Last.Exp, r.Last.AsName, null);
                 }
             }
 
@@ -679,7 +685,37 @@ namespace Npgsql.SqlGenerators
 
         // NOT EXISTS
         public override VisitedExpression Visit([NotNull] DbIsEmptyExpression expression)
-            => OperatorExpression.Negate(new ExistsExpression(expression.Argument.Accept(this)), _useNewPrecedences);
+        {
+            if (expression.Argument.ExpressionKind == DbExpressionKind.Project
+                && expression.Argument is DbProjectExpression proj
+                && proj.Projection.ExpressionKind == DbExpressionKind.NewInstance
+                && proj.Projection is DbNewInstanceExpression projNew
+                && projNew.Arguments.Count == 1
+                && projNew.Arguments[0].ExpressionKind == DbExpressionKind.Constant
+                && projNew.Arguments[0] is DbConstantExpression { Value: 1 }
+                && proj.Input.Expression.ExpressionKind == DbExpressionKind.Filter
+                && proj.Input.Expression is DbFilterExpression filter
+                && filter.Predicate.ExpressionKind == DbExpressionKind.Equals
+                && filter.Predicate is DbComparisonExpression filterComp
+                && filterComp.Left.ExpressionKind == DbExpressionKind.Property
+                && filterComp.Left is DbPropertyExpression { Instance: DbVariableReferenceExpression leftVarRef }
+                && filter.Input.VariableName == leftVarRef.VariableName
+                )
+            {
+                var left = filterComp.Right.Accept(this);
+                if (filter.Input.Expression is DbFunctionExpression func)
+                {
+                    if (func.Function.Name == VectorParameterType.WrapperFunctionName
+                        && func.Arguments.Count == 1)
+                    {
+                        var op = OperatorExpression.Build(Operator.EqualsAny, _useNewPrecedences, left, func.Arguments[0].Accept(this));
+                        return OperatorExpression.Negate(op, _useNewPrecedences);
+                    }
+                }
+            }
+            
+            return OperatorExpression.Negate(new ExistsExpression(expression.Argument.Accept(this)), _useNewPrecedences);
+        }
 
         public override VisitedExpression Visit([NotNull] DbIntersectExpression expression)
         {
@@ -707,7 +743,7 @@ namespace Npgsql.SqlGenerators
         // a function call
         // may be built in, canonical, or user defined
         public override VisitedExpression Visit([NotNull] DbFunctionExpression expression)
-            => VisitFunction(expression.Function, expression.Arguments, expression.ResultType, expression.Partitions, expression.SortOrder);
+            => VisitFunction(expression.Function, expression.Arguments, expression.ResultType, expression.Partitions, expression.SortOrder, out _);
 
         public override VisitedExpression Visit([NotNull] DbFilterExpression expression)
         {
@@ -1054,8 +1090,11 @@ namespace Npgsql.SqlGenerators
             }
         }
 
-        VisitedExpression VisitFunction(EdmFunction function, IList<DbExpression> args, TypeUsage resultType, IList<DbExpression> partitions, IList<DbSortClause> sortOrder)
+        VisitedExpression VisitFunction(EdmFunction function, IList<DbExpression> args, TypeUsage resultType, IList<DbExpression> partitions, IList<DbSortClause> sortOrder,
+            out VisitedExpression columnSpecification)
         {
+            columnSpecification = null;
+            
             if (function.NamespaceName == "Edm")
             {
                 if (function.WindowAttribute)
@@ -1237,6 +1276,10 @@ namespace Npgsql.SqlGenerators
                     Debug.Assert(args.Count == 2);
                     return NullIf(args[0].Accept(this), args[1].Accept(this));
                 
+                case "Between":
+                    Debug.Assert(args.Count == 3);
+                    return Between(args[0].Accept(this), args[1].Accept(this), args[2].Accept(this));
+                
                 default:
                     throw new NotSupportedException("NotSupported " + function.Name);
                 }
@@ -1335,6 +1378,12 @@ namespace Npgsql.SqlGenerators
                 }
             }
 
+            if (functionName == VectorParameterType.WrapperFunctionName)
+            {
+                Debug.Assert(args.Count == 1);
+                return VectorParameterWrapper(args[0], out columnSpecification);
+            }
+
             var customFuncCall = new FunctionExpression(
                 string.IsNullOrEmpty(function.Schema)
                     ? QuoteIdentifier(functionName)
@@ -1344,6 +1393,25 @@ namespace Npgsql.SqlGenerators
             foreach (var a in args)
                 customFuncCall.AddArgument(a.Accept(this));
             return customFuncCall;
+        }
+
+        VisitedExpression VectorParameterWrapper(DbExpression arg, out VisitedExpression columnSpecification)
+        {
+            var paramLiteral = arg.Accept(this);
+            var paramType = arg.ResultType.EdmType as VectorParameterType;
+            if (paramType == null)
+                throw new InvalidOperationException("VectorParameterType expected as argument.");
+            
+            if (!MetadataWorkspace.TryGetVectorParameterTypeMapping(paramType.ElementType.PrimitiveTypeKind, out var mapping))
+                throw new InvalidOperationException($"VectorParameterType for {paramType.ElementType.PrimitiveTypeKind} is not mapped.");
+
+            var columnName = mapping.ColumnName ?? "Value";
+
+            columnSpecification = new LiteralExpression("(" + QuoteIdentifier(columnName) + ")");
+            
+            var func = new FunctionExpression("unnest");
+            func.AddArgument(paramLiteral);
+            return func;
         }
 
         VisitedExpression VisitMatchRegex(EdmFunction function, IList<DbExpression> args, TypeUsage resultType)
@@ -1609,6 +1677,11 @@ namespace Npgsql.SqlGenerators
             substring.AddArgument(value);
             substring.AddArgument(defaultValue);
             return substring;
+        }
+
+        VisitedExpression Between(VisitedExpression value, VisitedExpression begin, VisitedExpression end)
+        {
+            return OperatorExpression.Build(Operator.Between, _useNewPrecedences, value, new BetweenBoundsExpression(begin, end));
         }
 
         VisitedExpression IsNumeric(VisitedExpression value)

@@ -354,7 +354,7 @@ namespace Npgsql.SqlGenerators
         void WriteSubquerySql(StringBuilder sqlText)
         {
             sqlText.Append("DELETE " + "FROM ");
-            var target = new FromExpression(Target.From, DeleteTargetName);
+            var target = new FromExpression(Target.From, DeleteTargetName, null);
             target.WriteSql(sqlText);
             sqlText.AppendLine();
             sqlText.Append("USING (").AppendLine();
@@ -465,7 +465,7 @@ namespace Npgsql.SqlGenerators
         void WriteSubquerySql(StringBuilder sqlText)
         {
             sqlText.Append("UPDATE ");
-            var target = new FromExpression(Target.From, UpdateTargetName);
+            var target = new FromExpression(Target.From, UpdateTargetName, null);
             target.WriteSql(sqlText);
             WriteSetClause(sqlText);
             sqlText.AppendLine();

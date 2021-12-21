@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.Entity.Core.Common.CommandTrees;
+using System.Data.Entity.Core.Metadata.Edm;
 
 namespace Npgsql.SqlGenerators
 {
@@ -10,7 +11,7 @@ namespace Npgsql.SqlGenerators
         readonly DbInsertCommandTree _commandTree;
         string _tableName;
 
-        public SqlInsertGenerator(DbInsertCommandTree commandTree)
+        public SqlInsertGenerator(MetadataWorkspace metadataWorkspace, DbInsertCommandTree commandTree) : base(metadataWorkspace)
         {
             _commandTree = commandTree;
         }

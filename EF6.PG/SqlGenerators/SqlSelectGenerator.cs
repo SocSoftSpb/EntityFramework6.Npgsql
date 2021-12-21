@@ -14,12 +14,12 @@ namespace Npgsql.SqlGenerators
 
         protected override DbDmlOperation DmlOperation => _commandTree.DmlOperation; 
 
-        public SqlSelectGenerator(DbQueryCommandTree commandTree)
+        public SqlSelectGenerator(MetadataWorkspace metadataWorkspace, DbQueryCommandTree commandTree) : base(metadataWorkspace)
         {
             _commandTree = commandTree;
         }
 
-        protected SqlSelectGenerator()
+        protected SqlSelectGenerator(MetadataWorkspace metadataWorkspace) : base(metadataWorkspace)
         {
             // used only for other generators such as returning
         }
