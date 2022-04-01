@@ -170,7 +170,7 @@ namespace Npgsql.SqlGenerators
                     .AppendLine()
                     .Append("    RETURNING 1").AppendLine()
                     .Append(")").AppendLine()
-                    .Append("SELECT " + "count(1) FROM ").Append(CteRowCountName);
+                    .Append("SELECT count(1) FROM ").Append(CteRowCountName);
             }
         }
         
@@ -337,7 +337,7 @@ namespace Npgsql.SqlGenerators
 
         void WriteSimpleSql(StringBuilder sqlText)
         {
-            sqlText.Append("DELETE " + "FROM ");
+            sqlText.Append("DELETE FROM ");
             Target.WriteSql(sqlText);
             sqlText.AppendLine();
 
@@ -353,7 +353,7 @@ namespace Npgsql.SqlGenerators
 
         void WriteSubquerySql(StringBuilder sqlText)
         {
-            sqlText.Append("DELETE " + "FROM ");
+            sqlText.Append("DELETE FROM ");
             var target = new FromExpression(Target.From, DeleteTargetName, null);
             target.WriteSql(sqlText);
             sqlText.AppendLine();
@@ -486,7 +486,7 @@ namespace Npgsql.SqlGenerators
             for (var colIndex = 0; colIndex < InputExpression.Projection.Arguments.Count; colIndex++)
             {
                 var map = FindMapping(colIndex);
-                if (map.TargetName == null)
+                if (map.TargetPropertyName == null)
                 {
                     if (colIndex == UpdateOp.ColumnMap.NullSentinelOrdinal
                         || InputExpression.Projection.Arguments[colIndex] is ColumnExpression { Name: DmlUtils.CtidAlias })
@@ -501,7 +501,7 @@ namespace Npgsql.SqlGenerators
                     sqlText.Append(",");
 
                 sqlText.AppendLine()
-                    .Append("    ").Append(SqlBaseGenerator.QuoteIdentifier(map.TargetName))
+                    .Append("    ").Append(SqlBaseGenerator.QuoteIdentifier(map.TargetColumnName))
                     .Append(" = ");
                 
                 if (_isSimpleForm)
@@ -561,7 +561,7 @@ namespace Npgsql.SqlGenerators
                     if (mappings[iMap].SourceOrdinal == i)
                     {
                         if (outColumns[iMap] != null)
-                            throw new InvalidOperationException($"Column {mappings[iMap].TargetName} is mapped twice.");
+                            throw new InvalidOperationException($"Column {mappings[iMap].TargetPropertyName} is mapped twice.");
                         outColumns[iMap] = column;
                         found = true;
                         break;
@@ -582,7 +582,7 @@ namespace Npgsql.SqlGenerators
             for (var i = 0; i < outColumns.Length; i++)
             {
                 if (outColumns[i] == null)
-                    throw new InvalidOperationException($"Can't find map for column {mappings[i].TargetName}.");
+                    throw new InvalidOperationException($"Can't find map for column {mappings[i].TargetPropertyName}.");
                 InputExpression.Projection.Arguments.Add(outColumns[i]);
             }
 
@@ -620,7 +620,7 @@ namespace Npgsql.SqlGenerators
                 if (i > 0)
                     sqlText.Append(", ");
                 
-                sqlText.Append(SqlBaseGenerator.QuoteIdentifier(InsertOp.ColumnMap.Mappings[i].TargetName));
+                sqlText.Append(SqlBaseGenerator.QuoteIdentifier(InsertOp.ColumnMap.Mappings[i].TargetColumnName));
             }
             
             if (InsertOp.Discriminators != null && InsertOp.Discriminators.Length > 0)
