@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Data.Entity;
 using System.Data.Entity.Core.Objects;
 using System.Data.Entity.Infrastructure;
 using System.Diagnostics.CodeAnalysis;
@@ -307,6 +308,18 @@ namespace EntityFramework6.Npgsql.Tests
             Assert.NotNull(strToDelete);
             Assert.That(result >= 0);
                     
+            tr.Rollback();
+        }
+
+        [Test]
+        public void CanCreateDateTime()
+        {
+            using var context = new BloggingContext(ConnectionString);
+            using var tr = context.Database.BeginTransaction();
+
+            var qq = context.Blogs.Select(e => new { e.BlogId, dt = DbFunctions.CreateDateTime(2020, 01, 01, 0, 0, 0) });
+            var ss = qq.ToString();
+            
             tr.Rollback();
         }
        

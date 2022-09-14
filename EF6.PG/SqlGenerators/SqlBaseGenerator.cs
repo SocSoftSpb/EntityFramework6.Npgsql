@@ -1231,6 +1231,8 @@ namespace Npgsql.SqlGenerators
                     // TODO: this doesn't work yet because the reader
                     // doesn't return DateTimeOffset.
                     return new LiteralExpression("CURRENT_TIMESTAMP");
+                case "CreateDateTime":
+                    return CreateDateTime(args);
 
                 // bitwise operators
                 case "BitwiseAnd":
@@ -1565,6 +1567,19 @@ namespace Npgsql.SqlGenerators
                 mulLeft = OperatorExpression.Build(Operator.Div, _useNewPrecedences, mulLeft, new LiteralExpression("1000"));
             var mulRight = new LiteralExpression($"INTERVAL '1 {part}'");
             return OperatorExpression.Build(Operator.Add, _useNewPrecedences, time, OperatorExpression.Build(Operator.Mul, _useNewPrecedences, mulLeft, mulRight));
+        }
+
+        VisitedExpression CreateDateTime(IList<DbExpression> args)
+        {
+            Debug.Assert(args.Count == 6);
+            
+            var exp = new FunctionExpression("make_timestamp");
+            foreach (var dbExpression in args)
+            {
+                exp.AddArgument(dbExpression.Accept(this));
+            }
+
+            return exp;
         }
 
         VisitedExpression DateDiff(string functionName, VisitedExpression start, VisitedExpression end)
