@@ -141,6 +141,16 @@ namespace EntityFramework6.Npgsql.Tests
                 var trace = q.ToTraceString();
             }
         }
+
+        [Test]
+        public void CanExecuteStoreQueryWithVectorParameter()
+        {
+            using var context = new BloggingObjectContext(ConnectionString);
+            var vp = new VectorParameter<int>(new[] { 1, 2, 3 });
+
+            var q = @"SELECT ""BlogId"", ""Name"" FROM dbo.""Blogs"" WHERE ""BlogId""=ANY(@p0);";
+            context.ExecuteStoreCommand(q, vp);
+        }
         
     }
 }

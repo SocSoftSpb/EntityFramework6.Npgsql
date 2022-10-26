@@ -11,6 +11,8 @@ using Npgsql.SqlGenerators;
 using DbConnection = System.Data.Common.DbConnection;
 using DbCommand = System.Data.Common.DbCommand;
 using System.Data.Common;
+using System.Data.Entity.Core.Mapping;
+using System.Data.Entity.Core.Objects;
 using NpgsqlTypes;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -73,6 +75,33 @@ namespace Npgsql
                 NpgsqlDbType = npgsqlDbType
             };
             return dbParameter;
+        }
+        
+        private static void SetVectorParameterProperties(NpgsqlParameter npgParameter, VectorParameterTypeMapping mapping)
+        {
+            var primitiveTypeKind = mapping.VectorParameterType.ElementType.PrimitiveTypeKind;
+            var elType = NpgsqlProviderManifest.GetNpgsqlDbType(primitiveTypeKind);
+            if (elType == NpgsqlDbType.Unknown && primitiveTypeKind == PrimitiveTypeKind.String)
+                elType = NpgsqlDbType.Text;
+
+            npgParameter.NpgsqlDbType = NpgsqlDbType.Array | elType;
+        }
+
+        public override void SetParameterValue(MetadataWorkspace metadataWorkspace, DbParameter parameter, object value)
+        {
+            if (value is VectorParameter vectorParameter)
+            {
+                if (!(parameter is NpgsqlParameter npgParameter))
+                    throw new InvalidOperationException("NpgsqlParameter expected.");
+            
+                var mapping = GetVectorParameterTypeMapping(metadataWorkspace, vectorParameter);
+                SetVectorParameterProperties(npgParameter, mapping);
+                npgParameter.Value = value;
+            }
+            else
+            {
+                base.SetParameterValue(metadataWorkspace, parameter, value);
+            }
         }
 
         protected override void SetDbParameterValue(MetadataWorkspace metadataWorkspace, DbParameter parameter, TypeUsage parameterType, object value)
