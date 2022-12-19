@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using JetBrains.Annotations;
 using System.Data.Entity.Core.Common;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Metadata.Edm;
@@ -13,13 +12,13 @@ using DbCommand = System.Data.Common.DbCommand;
 using System.Data.Common;
 using System.Data.Entity.Core.Mapping;
 using System.Data.Entity.Core.Objects;
+using JetBrains.Annotations;
 using NpgsqlTypes;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace Npgsql
 {
-    [PublicAPI]
     public class NpgsqlServices : DbProviderServices
     {
         public static NpgsqlServices Instance { get; } = new NpgsqlServices();
