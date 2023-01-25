@@ -1,6 +1,6 @@
 <Project>
   <ItemGroup>
-    <PackageReference Update="EntityFramework" Version="6.4.1.501" />
+    <PackageReference Update="EntityFramework" Version="6.4.1.502" />
     <PackageReference Update="Npgsql" Version="5.0.16.2" />
     <PackageReference Update="Npgsql.LegacyPostgis" Version="5.0.16.2" />
 
