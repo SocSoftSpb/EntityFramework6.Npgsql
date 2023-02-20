@@ -1,8 +1,8 @@
 <Project>
   <ItemGroup>
-    <PackageReference Update="EntityFramework" Version="6.4.1.502" />
-    <PackageReference Update="Npgsql" Version="5.0.16.2" />
-    <PackageReference Update="Npgsql.LegacyPostgis" Version="5.0.16.2" />
+    <PackageReference Update="EntityFramework" Version="6.4.1.503" />
+    <PackageReference Update="Npgsql" Version="5.0.16.3" />
+    <PackageReference Update="Npgsql.LegacyPostgis" Version="5.0.16.3" />
 
     <PackageReference Update="NUnit" Version="3.12.0" />
     <PackageReference Update="Microsoft.NET.Test.Sdk" Version="16.2.0" />
