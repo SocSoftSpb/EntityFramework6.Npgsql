@@ -1129,7 +1129,7 @@ namespace Npgsql.SqlGenerators
                     return indexOf;
                 case "Left":
                     Debug.Assert(args.Count == 2);
-                    return Substring(args[0].Accept(this), new LiteralExpression(" 1 "), args[1].Accept(this));
+                    return Left(args[0].Accept(this), args[1].Accept(this));
                 case "Length":
                 {
                     var length = new FunctionExpression("char_length");
@@ -1158,14 +1158,7 @@ namespace Npgsql.SqlGenerators
                 // case "Reverse":
                 case "Right":
                     Debug.Assert(args.Count == 2);
-                    {
-                        var arg0 = args[0].Accept(this);
-                        var arg1 = args[1].Accept(this);
-                        var start = new FunctionExpression("char_length");
-                        start.AddArgument(arg0);
-                        // add one before subtracting count since strings are 1 based in postgresql
-                        return Substring(arg0, OperatorExpression.Build(Operator.Sub, _useNewPrecedences, OperatorExpression.Build(Operator.Add, _useNewPrecedences, start, new LiteralExpression("1")), arg1));
-                    }
+                    return Right(args[0].Accept(this), args[1].Accept(this));
                 case "RTrim":
                     return StringModifier("rtrim", args);
                 case "Substring":
@@ -1499,6 +1492,22 @@ namespace Npgsql.SqlGenerators
             substring.AddArgument(source);
             substring.AddArgument(start);
             return substring;
+        }
+
+        VisitedExpression Left(VisitedExpression source, VisitedExpression count)
+        {
+            var left = new FunctionExpression("left");
+            left.AddArgument(source);
+            left.AddArgument(count);
+            return left;
+        }
+
+        VisitedExpression Right(VisitedExpression source, VisitedExpression count)
+        {
+            var right = new FunctionExpression("right");
+            right.AddArgument(source);
+            right.AddArgument(count);
+            return right;
         }
 
         VisitedExpression UnaryMath(string funcName, IList<DbExpression> args)
