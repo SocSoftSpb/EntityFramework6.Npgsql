@@ -67,7 +67,7 @@ namespace EntityFramework6.Npgsql.Tests
 
         void CanInsertTempTableInternal(bool withCache)
         {
-            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId\" INT NOT NULL);";
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title_X\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
             
             using var context = new BloggingContext(ConnectionString);
             using var tr = context.Database.BeginTransaction();
@@ -77,7 +77,11 @@ namespace EntityFramework6.Npgsql.Tests
             objectContext.ExecuteStoreCommand(sqlCreate);
 
             IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
-            var dynQ = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post");
+            var options = context.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[1].ColumnName = "Title_X";
+            options.Columns[2].ColumnName = "BlogId_Y";
+
+            var dynQ = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
             var strDynQ = ((ObjectQuery)dynQ).ToTraceString();
                     
             Assert.NotNull(strDynQ);
@@ -95,9 +99,46 @@ namespace EntityFramework6.Npgsql.Tests
                     });
                 
             var fromQuery = (ObjectQuery<TempPost>)toInsert;
-            var options = context.CreateDynamicQueryOptions(typeof(TempPost));
             if (withCache)
                 options.UniqueSetName = "UUQ_t_POST";
+            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
+            var strInsert = insertQuery.ToTraceString();
+            var result = insertQuery.Execute();
+            
+            Assert.NotNull(strInsert);
+            Assert.That(result >= 0);
+
+            tr.Rollback();
+        }
+        
+        [Test]
+        public void CanInsertTempTableWithOmmitColumns()
+        {
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
+            
+            using var context = new BloggingContext(ConnectionString);
+            using var tr = context.Database.BeginTransaction();
+            
+            var objectContext = ((IObjectContextAdapter)context).ObjectContext;
+            objectContext.Connection.Open();
+            objectContext.ExecuteStoreCommand(sqlCreate);
+
+            IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
+            var options = context.CreateDynamicQueryOptions(typeof(TempPost));
+            // options.Columns[1].ColumnName = "Title_X";
+            options.Columns[2].ColumnName = "BlogId_Y";
+
+            var toInsert = blogs.Where(
+                    e => !e.Name.Contains("aaa")
+                )
+                .Take(20)
+                .Select(
+                    e => new TempPost
+                    {
+                        PostId = e.BlogId + 100500,
+                    });
+                
+            var fromQuery = (ObjectQuery<TempPost>)toInsert;
             var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
             var strInsert = insertQuery.ToTraceString();
             var result = insertQuery.Execute();
@@ -116,7 +157,7 @@ namespace EntityFramework6.Npgsql.Tests
         
         void CanInsertTempTableInternalWithParameters(bool withCache)
         {
-            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId\" INT NOT NULL);";
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title_X\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
             
             using var context = new BloggingContext(ConnectionString);
             using var tr = context.Database.BeginTransaction();
@@ -126,6 +167,10 @@ namespace EntityFramework6.Npgsql.Tests
             objectContext.ExecuteStoreCommand(sqlCreate);
 
             IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
+
+            var options = context.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[1].ColumnName = "Title_X";
+            options.Columns[2].ColumnName = "BlogId_Y";
             var dynQ = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post");
             var strDynQ = ((ObjectQuery)dynQ).ToTraceString();
                     
@@ -147,7 +192,6 @@ namespace EntityFramework6.Npgsql.Tests
                     });
                 
             var fromQuery = (ObjectQuery<TempPost>)toInsert;
-            var options = context.CreateDynamicQueryOptions(typeof(TempPost));
             if (withCache)
                 options.UniqueSetName = "UUQ_t_POST";
             var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
@@ -163,7 +207,7 @@ namespace EntityFramework6.Npgsql.Tests
         [Test]
         public void CanUpdateTempTable()
         {
-            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId\" INT NOT NULL);";
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title_X\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
             const string sqlInsert = @"INSERT " + @"INTO pg_temp.""#t_Post"" VALUES (1, 'Post 1', 1), (2, 'Post 2', 1), (3, 'Post 3', 2), (4, 'Post 4', 3)";
 
             using var context = new BloggingContext(ConnectionString);
@@ -175,6 +219,8 @@ namespace EntityFramework6.Npgsql.Tests
             objectContext.ExecuteStoreCommand(sqlInsert);
 
             var options = BloggingContext.DynamicQueryUtils.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[1].ColumnName = "Title_X";
+            options.Columns[2].ColumnName = "BlogId_Y";
             var tempBooks = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
                     
             var toUpdate = tempBooks.Where(
@@ -186,7 +232,7 @@ namespace EntityFramework6.Npgsql.Tests
             var updateQuery = BatchDmlFactory.CreateBatchUpdateDynamicTableQuery(
                 fromQuery,
                 options,
-                e => new TempPost()
+                e => new TempPost
                 {
                     Title = e.Title + " aaa",
                 }, true);
@@ -202,7 +248,7 @@ namespace EntityFramework6.Npgsql.Tests
         [Test]
         public void CanUpdateTempTableWithJoin()
         {
-            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId\" INT NOT NULL);";
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title_X\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
             const string sqlInsert = @"INSERT " + @"INTO pg_temp.""#t_Post"" VALUES (1, 'Post 1', 1), (2, 'Post 2', 1), (3, 'Post 3', 2), (4, 'Post 4', 3)";
 
             using var context = new BloggingContext(ConnectionString);
@@ -215,6 +261,8 @@ namespace EntityFramework6.Npgsql.Tests
 
             IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
             var options = BloggingContext.DynamicQueryUtils.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[1].ColumnName = "Title_X";
+            options.Columns[2].ColumnName = "BlogId_Y";
             var tempBooks = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
                     
             var toUpdate = tempBooks.Join(blogs, b => b.BlogId, a => a.BlogId, (b, a) => new BatchDmlFactory.JoinTuple<TempPost, Blog>{Entity = b, Source = a})
@@ -242,7 +290,7 @@ namespace EntityFramework6.Npgsql.Tests
         [Test]
         public void CanDeleteTempTable()
         {
-            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId\" INT NOT NULL);";
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title_XX\" TEXT NULL, \"BlogId\" INT NOT NULL);";
             const string sqlInsert = @"INSERT " + @"INTO pg_temp.""#t_Post"" VALUES (1, 'Post 1', 1), (2, 'Post 2', 1), (3, 'Post 3', 2), (4, 'Post 4', 3)";
             
             using var context = new BloggingContext(ConnectionString);
@@ -254,6 +302,7 @@ namespace EntityFramework6.Npgsql.Tests
             objectContext.ExecuteStoreCommand(sqlInsert);
 
             var options = BloggingContext.DynamicQueryUtils.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[1].ColumnName = "Title_XX";
             var tempBooks = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
                     
             var toDelete = tempBooks.Where(
@@ -277,7 +326,7 @@ namespace EntityFramework6.Npgsql.Tests
         [Test]
         public void CanDeleteTempTableWithJoin()
         {
-            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId\" INT NOT NULL);";
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title_X\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
             const string sqlInsert = @"INSERT " + @"INTO pg_temp.""#t_Post"" VALUES (1, 'Post 1', 1), (2, 'Post 2', 1), (3, 'Post 3', 2), (4, 'Post 4', 3)";
             
             using var context = new BloggingContext(ConnectionString);
@@ -290,6 +339,8 @@ namespace EntityFramework6.Npgsql.Tests
 
             IQueryable<Blog> authors = objectContext.CreateObjectSet<Blog>();
             var options = BloggingContext.DynamicQueryUtils.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[1].ColumnName = "Title_X";
+            options.Columns[2].ColumnName = "BlogId_Y";
             var tempBooks = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
                     
             var toDelete = tempBooks.Join(authors, b => b.BlogId, a => a.BlogId, (b, a) => new BatchDmlFactory.JoinTuple<TempPost, Blog>{Entity = b, Source = a})
