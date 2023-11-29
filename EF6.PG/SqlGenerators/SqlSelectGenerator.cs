@@ -167,7 +167,7 @@ namespace Npgsql.SqlGenerators
             
             foreach (var clm in entitySet.ElementType.Properties)
             {
-                var mp = mapInfo.FirstOrDefault(e => e.TargetName == clm.Name);
+                var mp = mapInfo.FirstOrDefault(e => e.TargetStoreName == clm.Name);
                 if (mp == null && IsNullable(clm.TypeUsage))
                     continue;
                 

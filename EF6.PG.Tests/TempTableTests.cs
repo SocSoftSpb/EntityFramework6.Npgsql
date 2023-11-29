@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Core.Objects;
 using System.Data.Entity.Infrastructure;
@@ -146,6 +147,72 @@ namespace EntityFramework6.Npgsql.Tests
             Assert.NotNull(strInsert);
             Assert.That(result >= 0);
 
+            tr.Rollback();
+        }
+
+        [Test]
+        public void CanInsertTempTableWithChangedColumnName()
+        {
+            const string sqlCreate = "CREATE TEMPORARY " + "TABLE pg_temp.\"#t_Post\"(\"PostId\" INT NOT NULL, \"Title\" TEXT NULL, \"BlogId_Y\" INT NOT NULL);";
+            
+            using var context = new BloggingContext(ConnectionString);
+            using var tr = context.Database.BeginTransaction();
+
+            var blog = new Blog
+            {
+                Name = "xxx",
+                Posts = new List<Post>
+                {
+                    new() {Rating = 2, Content = "a"},
+                    new() {Rating = 2, Content = "b"},
+                    new() {Rating = 4, Content = "c"},
+                }
+            };
+
+            context.Blogs.Add(blog);
+            context.SaveChanges();
+
+            var objectContext = ((IObjectContextAdapter)context).ObjectContext;
+            objectContext.Connection.Open();
+            objectContext.ExecuteStoreCommand(sqlCreate);
+
+            IQueryable<Post> posts = objectContext.CreateObjectSet<Post>();
+            var options = context.CreateDynamicQueryOptions(typeof(TempPost));
+            options.Columns[2].ColumnName = "BlogId_Y";
+
+            var dynQ = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
+            var strDynQ = ((ObjectQuery)dynQ).ToTraceString();
+            Assert.IsNotNull(strDynQ);
+
+            var posts2 = posts.Where(e => e.Rating == 2);
+            var posts2Cnt = posts2.Count();
+            Assert.AreNotEqual(0, posts2Cnt);
+
+            var toInsert = posts2.Where(
+                    e => !e.Content.Contains("aaa")
+                )
+                .Select(
+                    e => new TempPost
+                    {
+                        PostId = e.BlogId + 100500,
+                        Title = e.Title,
+                        BlogId = e.Rating
+                    });
+                
+            var toInsertCount = toInsert.Count();
+            Assert.AreEqual(posts2Cnt, toInsertCount);
+
+            var fromQuery = (ObjectQuery<TempPost>)toInsert;
+            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
+            var strInsert = insertQuery.ToTraceString();
+            var result = insertQuery.Execute();
+
+            Assert.NotNull(strInsert);
+            Assert.That(result >= 0);
+
+            var cntTemp = dynQ.Count(e => e.BlogId == 2);
+            Assert.AreEqual(posts2Cnt, cntTemp);
+            
             tr.Rollback();
         }
         
