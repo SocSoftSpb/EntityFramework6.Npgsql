@@ -85,11 +85,7 @@ namespace EntityFramework6.Npgsql.Tests
         public DateTime CreationDate { get; set; }
         public string VarbitColumn { get; set; }
         public int BlogId { get; set; }
-        
-        public int Blog2Id { get; set; }
         public virtual Blog Blog { get; set; }
-        
-        public virtual Blog Blog2 { get; set; }
     }
 
     public class Post1 : Post
@@ -221,7 +217,6 @@ namespace EntityFramework6.Npgsql.Tests
             dbModelBuilder.Entity<Administrator>();
 
             dbModelBuilder.Entity<Post>().HasRequired(e => e.Blog).WithMany(e => e.Posts).HasForeignKey(e => e.BlogId);
-            dbModelBuilder.Entity<Post>().HasRequired(e => e.Blog2).WithMany().HasForeignKey(e => e.Blog2Id);
 
             dbModelBuilder.Entity<Post>().Map(e => e.Requires("dDd").HasValue((byte)11));
             dbModelBuilder.Entity<Post1>().Map(e => e.Requires("dDd").HasValue((byte)25));

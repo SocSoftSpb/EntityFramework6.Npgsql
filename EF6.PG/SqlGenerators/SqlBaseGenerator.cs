@@ -826,7 +826,7 @@ namespace Npgsql.SqlGenerators
         public override VisitedExpression Visit([NotNull] DbCastExpression expression)
             => new CastExpression(expression.Argument.Accept(this), GetDbType(expression.ResultType.EdmType));
 
-        protected string GetDbType(EdmType edmType)
+        internal static string GetDbType(EdmType edmType)
         {
             var primitiveType = edmType as PrimitiveType;
             if (primitiveType == null)
@@ -1741,6 +1741,42 @@ namespace Npgsql.SqlGenerators
         internal static PrimitiveTypeKind GetPrimitiveTypeKind(TypeUsage type)
         {
             return ((PrimitiveType)type.EdmType).PrimitiveTypeKind;
+        }
+
+        internal static string GetDefaultPrimitiveLiteral(TypeUsage storeTypeUsage)
+        {
+            Debug.Assert(BuiltInTypeKind.PrimitiveType == storeTypeUsage.EdmType.BuiltInTypeKind, "Type must be primitive type");
+
+            var primitiveTypeKind = GetPrimitiveTypeKind(storeTypeUsage);
+            
+            switch (primitiveTypeKind)
+            {
+            case PrimitiveTypeKind.Byte:
+            case PrimitiveTypeKind.Decimal:
+            case PrimitiveTypeKind.Double:
+            case PrimitiveTypeKind.Single:
+            case PrimitiveTypeKind.SByte:
+            case PrimitiveTypeKind.Int16:
+            case PrimitiveTypeKind.Int32:
+            case PrimitiveTypeKind.Int64:
+                return "0";
+            case PrimitiveTypeKind.Boolean:
+                return "false";
+            case PrimitiveTypeKind.Binary:
+                return "E''";
+            case PrimitiveTypeKind.DateTime:
+                return "'00010101'";
+            case PrimitiveTypeKind.Guid:
+                return "'00000000-0000-0000-0000-000000000000'";
+            case PrimitiveTypeKind.String:
+                return "''";
+            case PrimitiveTypeKind.Time:
+                return "'0'";
+            case PrimitiveTypeKind.DateTimeOffset:
+                return "'00010101'";
+            default:
+                throw new InvalidOperationException($"PrimitiveTypeKind {primitiveTypeKind} is not supported.");
+            }
         }
     }
 }

@@ -20,7 +20,6 @@ namespace EntityFramework6.Npgsql.Tests
             IQueryable<Post> posts = objectContext.CreateObjectSet<Post>();
             var toDelete = posts.Where(e => e.Title.Contains("aaa") 
                                             && e.Blog.Name.StartsWith("A")
-                                            && e.Blog2.Name.StartsWith("B")
                 );
                 
             var queryTrace = ((ObjectQuery)toDelete).ToTraceString();
@@ -169,6 +168,10 @@ namespace EntityFramework6.Npgsql.Tests
             
             context.Database.Log = Console.Out.WriteLine;
 
+            context.Blogs.Add(new Blog { Name = "Hello" });
+            context.Blogs.Add(new Blog { Name = "World" });
+            context.SaveChanges();
+
             var objectContext = ((IObjectContextAdapter)context).ObjectContext;
             IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
                 
@@ -194,5 +197,43 @@ namespace EntityFramework6.Npgsql.Tests
                     
             tr.Rollback();
         }
+
+        [Test]
+        public void Test_insert_batch_omit_required_column()
+        {
+            using var context = new BloggingContext(ConnectionString);
+            using var tr = context.Database.BeginTransaction();
+            
+            context.Database.Log = Console.Out.WriteLine;
+
+            context.Blogs.Add(new Blog { Name = "Hello" });
+            context.Blogs.Add(new Blog { Name = "World" });
+            context.SaveChanges();
+
+
+            var objectContext = ((IObjectContextAdapter)context).ObjectContext;
+            IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
+                
+            var toInsert = blogs.Where(
+                    e => !e.Name.Contains("aaa")
+                )
+                .Select(e => new Post
+                {
+                    PostId = 200 + e.BlogId,
+                    Title = "Post in blog " + e.Name,
+                    CreationDate = DateTime.Now,
+                    BlogId = e.BlogId,
+                });
+                
+            var fromQuery = (ObjectQuery<Post>)toInsert;
+            var insertQuery = BatchDmlFactory.CreateBatchInsertQuery(fromQuery, true);
+            var sqlText = insertQuery.ToTraceString();
+            var result = insertQuery.Execute();
+                
+            Assert.NotNull(sqlText);
+                    
+            tr.Rollback();
+        }
+
     }
 }

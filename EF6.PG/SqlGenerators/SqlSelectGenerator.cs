@@ -249,40 +249,5 @@ namespace Npgsql.SqlGenerators
             command.UnknownResultTypeList = unknownResultTypeList;
             command.ObjectResultTypes = objectResultTypes;
         }
-        
-        private static string GetDefaultPrimitiveLiteral(TypeUsage storeTypeUsage)
-        {
-            Debug.Assert(BuiltInTypeKind.PrimitiveType == storeTypeUsage.EdmType.BuiltInTypeKind, "Type must be primitive type");
-
-            var primitiveTypeKind = GetPrimitiveTypeKind(storeTypeUsage);
-            
-            switch (primitiveTypeKind)
-            {
-            case PrimitiveTypeKind.Byte:
-            case PrimitiveTypeKind.Decimal:
-            case PrimitiveTypeKind.Boolean:
-            case PrimitiveTypeKind.Double:
-            case PrimitiveTypeKind.Single:
-            case PrimitiveTypeKind.SByte:
-            case PrimitiveTypeKind.Int16:
-            case PrimitiveTypeKind.Int32:
-            case PrimitiveTypeKind.Int64:
-                return "0";
-            case PrimitiveTypeKind.Binary:
-                return "E''";
-            case PrimitiveTypeKind.DateTime:
-                return "'00010101'";
-            case PrimitiveTypeKind.Guid:
-                return "'00000000-0000-0000-0000-000000000000'";
-            case PrimitiveTypeKind.String:
-                return "''";
-            case PrimitiveTypeKind.Time:
-                return "'0'";
-            case PrimitiveTypeKind.DateTimeOffset:
-                return "'00010101'";
-            default:
-                throw new InvalidOperationException($"PrimitiveTypeKind {primitiveTypeKind} is not supported.");
-            }
-        }
     }
 }

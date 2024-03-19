@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
 using System.Data.Entity.Core.Metadata.Edm;
@@ -533,6 +534,7 @@ namespace Npgsql.SqlGenerators
     internal sealed class DmlInsertExpression : DmlExpressionBase
     {
         readonly SqlSelectGenerator _sqlSelectGenerator;
+        IList<EdmProperty> _unmappedRequiredProperties;
         protected override string CteRowCountName => "__cte_insert__"; 
         DbDmlInsertOperation InsertOp { get; }
         protected override bool WithRowCount => InsertOp.WithRowCount;
@@ -586,7 +588,26 @@ namespace Npgsql.SqlGenerators
                 InputExpression.Projection.Arguments.Add(outColumns[i]);
             }
 
-            if (InsertOp.Discriminators != null && InsertOp.Discriminators.Length > 0)
+            _unmappedRequiredProperties = InsertOp.GetUnmappedRequiredProperties();
+            if (_unmappedRequiredProperties != null)
+            {
+                var oldCreateParametersForConstants = _sqlSelectGenerator.CreateParametersForConstants;
+                foreach (var edmProperty in _unmappedRequiredProperties)
+                {
+                    _sqlSelectGenerator.CreateParametersForConstants = false;
+
+                    var columnExpr = new ColumnExpression(new CastExpression(
+                            new LiteralExpression(SqlBaseGenerator.GetDefaultPrimitiveLiteral(edmProperty.TypeUsage)),
+                            SqlBaseGenerator.GetDbType(edmProperty.TypeUsage.EdmType)
+                        ),
+                        "__unmapped__" + edmProperty.Name, edmProperty.TypeUsage);
+                    InputExpression.Projection.Arguments.Add(columnExpr);
+                }
+                _sqlSelectGenerator.CreateParametersForConstants = oldCreateParametersForConstants;
+            }
+
+
+            if (InsertOp.Discriminators is { Length: > 0 })
             {
                 var oldCreateParametersForConstants = _sqlSelectGenerator.CreateParametersForConstants;
                 foreach (var discriminator in InsertOp.Discriminators)
@@ -622,8 +643,18 @@ namespace Npgsql.SqlGenerators
                 
                 sqlText.Append(SqlBaseGenerator.QuoteIdentifier(InsertOp.ColumnMap.Mappings[i].TargetColumnName));
             }
-            
-            if (InsertOp.Discriminators != null && InsertOp.Discriminators.Length > 0)
+
+            if (_unmappedRequiredProperties != null)
+            {
+                foreach (var edmProperty in _unmappedRequiredProperties)
+                {
+                    sqlText.Append(", ")
+                        .Append(SqlBaseGenerator.QuoteIdentifier(edmProperty.Name));
+                }
+            }
+
+
+            if (InsertOp.Discriminators is { Length: > 0 })
             {
                 foreach (var discriminator in InsertOp.Discriminators)
                 {
