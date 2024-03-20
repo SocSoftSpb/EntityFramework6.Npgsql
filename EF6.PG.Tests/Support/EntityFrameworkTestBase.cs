@@ -88,6 +88,7 @@ namespace EntityFramework6.Npgsql.Tests
         public virtual Blog Blog { get; set; }
     }
 
+    /*
     public class Post1 : Post
     {
         
@@ -97,6 +98,7 @@ namespace EntityFramework6.Npgsql.Tests
     {
         
     }
+    */
 
     public class ClrEnumEntity
     {
@@ -218,9 +220,9 @@ namespace EntityFramework6.Npgsql.Tests
 
             dbModelBuilder.Entity<Post>().HasRequired(e => e.Blog).WithMany(e => e.Posts).HasForeignKey(e => e.BlogId);
 
-            dbModelBuilder.Entity<Post>().Map(e => e.Requires("dDd").HasValue((byte)11));
-            dbModelBuilder.Entity<Post1>().Map(e => e.Requires("dDd").HasValue((byte)25));
-            dbModelBuilder.Entity<Post2>().Map(e => e.Requires("dDd").HasValue((byte)55));
+            // dbModelBuilder.Entity<Post>().Map(e => e.Requires("dDd").HasValue((byte)11));
+            // dbModelBuilder.Entity<Post1>().Map(e => e.Requires("dDd").HasValue((byte)25));
+            // dbModelBuilder.Entity<Post2>().Map(e => e.Requires("dDd").HasValue((byte)55));
 
             dbModelBuilder.VectorParameter<int>()
                 .HasStoreType("Objects", "IntParam");

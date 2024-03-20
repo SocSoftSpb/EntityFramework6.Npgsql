@@ -409,6 +409,8 @@ namespace Npgsql.SqlGenerators
     internal class InputExpression : VisitedExpression
     {
         public bool Distinct { get; set; }
+        
+        public bool IsSubQuery { get; set; }
 
         public CommaSeparatedExpression Projection { get; set; }
 
@@ -498,7 +500,7 @@ namespace Npgsql.SqlGenerators
         bool CanSkipSubquery(InputExpression input)
         {
             return !ForceSubquery && input.Projection == null && input.Where == null && input.Distinct == false && input.OrderBy == null &&
-                   input.Skip == null && input.Limit == null;
+                   input.Skip == null && input.Limit == null && input.IsSubQuery == false;
         }
 
         internal override void WriteSql(StringBuilder sqlText)

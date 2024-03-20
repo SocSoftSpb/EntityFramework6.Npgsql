@@ -885,5 +885,64 @@ namespace EntityFramework6.Npgsql.Tests
             }
         }
 
+        [Test]
+        public void Test_AsSubQuery()
+        {
+            using var context = new BloggingContext(ConnectionString);
+
+            {
+                var blog = context.Blogs.Add(new Blog { Name = "Hello" });
+                context.Posts.Add(new Post { Blog = blog, Title = $"{blog.Name} 1" });
+                context.Posts.Add(new Post { Blog = blog, Title = $"{blog.Name} 2" });
+
+                blog = context.Blogs.Add(new Blog { Name = "World" });
+                context.Posts.Add(new Post { Blog = blog, Title = $"{blog.Name} 1" });
+                context.Posts.Add(new Post { Blog = blog, Title = $"{blog.Name} 2" });
+
+                context.Database.Log = Console.Out.WriteLine;
+
+                context.SaveChanges();
+            }
+
+            var q1 = from p in context.Posts
+                join b in context.Blogs.Where(e => !e.Name.StartsWith("И")) on p.BlogId equals b.BlogId
+                where b.Name != "ыыы"
+                select new { p.PostId, p.Title, b.Name };
+
+            var tr1 = q1.ToString();
+            var l1 = q1.ToList();
+                
+            var q2 = from p in context.Posts
+                join b in context.Blogs.Where(e => !e.Name.StartsWith("И")).Take(int.MaxValue) on p.BlogId equals b.BlogId
+                where b.Name != "ыыы"
+                select new { p.PostId, p.Title, b.Name };
+            var tr2 = q2.ToString();
+            var l2 = q2.ToList();
+
+            var q3 = from p in context.Posts
+                join b in context.Blogs.Where(e => !e.Name.StartsWith("И")).AsSubQuery() on p.BlogId equals b.BlogId
+                where b.Name != "ыыы"
+                select new { p.PostId, p.Title, b.Name };
+
+            var tr3 = q3.ToString();
+            var l3 = q3.ToList();
+
+            var q4 = from b in context.Blogs.Where(e => !e.Name.StartsWith("И")).AsSubQuery()
+                where b.Name != "ыыы"
+                select new { b.BlogId, b.Name };
+                
+            var tr4 = q4.ToString();
+            var l4 = q4.ToList();
+
+            var q5 = from b in context.Blogs.Where(e => !e.Name.StartsWith("И")).AsSubQuery().Take(10).Where(e => e.BlogId != 40).AsSubQuery().AsSubQuery()
+                where b.Name != "ыыы"
+                select new { b.BlogId, b.Name };
+                
+            var tr5 = q5.ToString();
+            var l5 = q5.ToList();
+            
+            
+        }
+
     }
 }

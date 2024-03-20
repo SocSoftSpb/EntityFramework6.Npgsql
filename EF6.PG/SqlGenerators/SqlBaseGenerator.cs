@@ -77,12 +77,15 @@ namespace Npgsql.SqlGenerators
         {
             switch (parentKind)
             {
+            case DbExpressionKind.AsSubQuery:
+                return true;
             case DbExpressionKind.Filter:
                 return
                     child.Projection == null &&
                     child.GroupBy == null &&
                     child.Skip == null &&
-                    child.Limit == null;
+                    child.Limit == null &&
+                    child.IsSubQuery == false;
             case DbExpressionKind.GroupBy:
                 return
                     child.Projection == null &&
@@ -90,27 +93,32 @@ namespace Npgsql.SqlGenerators
                     child.Distinct == false &&
                     child.OrderBy == null &&
                     child.Skip == null &&
-                    child.Limit == null;
+                    child.Limit == null &&
+                    child.IsSubQuery == false;
             case DbExpressionKind.Distinct:
                 return
                     child.OrderBy == null &&
                     child.Skip == null &&
-                    child.Limit == null;
+                    child.Limit == null &&
+                    child.IsSubQuery == false;
             case DbExpressionKind.Sort:
                 return
                     child.Projection == null &&
                     child.GroupBy == null &&
                     child.Skip == null &&
-                    child.Limit == null;
+                    child.Limit == null &&
+                    child.IsSubQuery == false;
             case DbExpressionKind.Skip:
                 return
                     child.Projection == null &&
                     child.Skip == null &&
-                    child.Limit == null;
+                    child.Limit == null &&
+                    child.IsSubQuery == false;
             case DbExpressionKind.Project:
                 return
                     child.Projection == null &&
-                    child.Distinct == false;
+                    child.Distinct == false &&
+                    child.IsSubQuery == false;
             // Limit and NewInstance are always true
             default:
                 throw new ArgumentException("Unexpected parent expression kind");
@@ -161,6 +169,16 @@ namespace Npgsql.SqlGenerators
                 foreach (var order in exp.SortOrder)
                     n.Last.Exp.OrderBy.AppendSort(order.Expression.Accept(this), order.Ascending);
                 LeaveExpression(n);
+
+                break;
+            }
+            case DbExpressionKind.AsSubQuery:
+            {
+                var exp = (DbAsSubQueryExpression)expression;
+                var childBindingName = NextAlias();
+                
+                n = GetInput(exp.Argument, childBindingName, bindingName, expression.ExpressionKind);
+                n.Last.Exp.IsSubQuery = true;
 
                 break;
             }
@@ -772,6 +790,12 @@ namespace Npgsql.SqlGenerators
         }
 
         public override VisitedExpression Visit([NotNull] DbDistinctExpression expression)
+        {
+            // Handled by VisitInputWithBinding
+            throw new NotImplementedException();
+        }
+
+        public override VisitedExpression Visit([NotNull] DbAsSubQueryExpression expression)
         {
             // Handled by VisitInputWithBinding
             throw new NotImplementedException();
