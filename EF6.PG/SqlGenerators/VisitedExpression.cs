@@ -4,9 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Metadata.Edm;
-using NpgsqlTypes;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using JetBrains.Annotations;
 
 namespace Npgsql.SqlGenerators
 {
@@ -189,7 +188,7 @@ namespace Npgsql.SqlGenerators
                 sqlText.Append("E'").Append(((string)_value).Replace(@"\", @"\\").Replace("'", @"\'")).Append("'");
                 break;
             case PrimitiveTypeKind.Time:
-                sqlText.AppendFormat(ni, "INTERVAL '{0}'", (NpgsqlTimeSpan)(TimeSpan)_value);
+                sqlText.AppendFormat(ni, "INTERVAL '{0}'", SqlBaseGenerator.MakeLiteral((TimeSpan)_value));
                 break;
             default:
                 // TODO: must support more constant value types.
@@ -991,7 +990,7 @@ namespace Npgsql.SqlGenerators
         readonly VisitedExpression _left;
         readonly VisitedExpression _right;
 
-        OperatorExpression(Operator op, bool useNewPrecedences, [CanBeNull] VisitedExpression left, [CanBeNull] VisitedExpression right)
+        OperatorExpression(Operator op, bool useNewPrecedences, [MaybeNull] VisitedExpression left, [MaybeNull] VisitedExpression right)
         {
             _op = op;
             _useNewPrecedences = useNewPrecedences;
@@ -1048,7 +1047,7 @@ namespace Npgsql.SqlGenerators
             WriteSql(sqlText, null);
         }
 
-        void WriteSql(StringBuilder sqlText, [CanBeNull] OperatorExpression rightParent)
+        void WriteSql(StringBuilder sqlText, [MaybeNull] OperatorExpression rightParent)
         {
             var leftOp = _left as OperatorExpression;
             var rightOp = _right as OperatorExpression;

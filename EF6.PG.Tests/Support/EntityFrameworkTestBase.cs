@@ -226,6 +226,10 @@ namespace EntityFramework6.Npgsql.Tests
 
             dbModelBuilder.VectorParameter<int>()
                 .HasStoreType("Objects", "IntParam");
+            dbModelBuilder.VectorParameter<short>()
+                .HasStoreType("Objects", "ShortParam");
+            dbModelBuilder.VectorParameter<byte>()
+                .HasStoreType("Objects", "ByteParam");
             dbModelBuilder.VectorParameter<string>()
                 .HasStoreType("Objects", "StringParam");
 

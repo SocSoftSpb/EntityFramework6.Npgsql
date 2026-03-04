@@ -6,8 +6,9 @@ using System.Globalization;
 using System.Text;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Data.Entity.Spatial;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using JetBrains.Annotations;
+using Npgsql.SqlGenerators;
 
 namespace Npgsql
 {
@@ -725,14 +726,14 @@ namespace Npgsql
         void AppendValue(DateTime value, StringBuilder sql)
         {
             sql.Append("'");
-            sql.Append(new NpgsqlTypes.NpgsqlDateTime(value));
+            sql.Append(value.ToString("o"));
             sql.Append("'");
         }
 
         void AppendValue(DateTimeOffset value, StringBuilder sql)
         {
             sql.Append("'");
-            sql.Append(new NpgsqlTypes.NpgsqlDateTime(value.UtcDateTime));
+            sql.Append(value.UtcDateTime.ToString("o"));
             sql.Append("'");
         }
 
@@ -753,7 +754,7 @@ namespace Npgsql
         void AppendValue(TimeSpan value, StringBuilder sql)
         {
             sql.Append("'");
-            sql.Append(new NpgsqlTypes.NpgsqlTimeSpan(value));
+            sql.Append(SqlBaseGenerator.MakeLiteral(value));
             sql.Append("'");
         }
 

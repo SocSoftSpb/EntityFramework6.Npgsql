@@ -38,10 +38,15 @@ namespace EntityFramework6.Npgsql.Tests
 
             context.Database.Log = Console.Out.WriteLine;
 
-            var param = new VectorParameter<int>(new[] { 1, 2, 3, 4 });
+            var param = new VectorParameter<int>([1, 2, 3, 4]);
             var queryable = posts.Where(e => param.Contains(e.PostId));
             var trace = ((ObjectQuery)queryable).ToTraceString();
             var lst = queryable.ToList();
+
+            var vp2 = new VectorParameter<byte>([1, 2, 3, 4]);
+            var queryable2 = posts.Where(e => vp2.Contains(e.Rating));
+            var trace2 = ((ObjectQuery)queryable2).ToTraceString();
+            var lst2 = queryable2.ToList();
         }
 
         [Test]

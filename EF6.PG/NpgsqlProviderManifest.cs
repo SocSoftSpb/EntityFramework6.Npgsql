@@ -4,11 +4,11 @@ using System.Data.Entity;
 using System.Data.Entity.Core.Common;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Xml;
-using JetBrains.Annotations;
 using NpgsqlTypes;
 
 namespace Npgsql

@@ -3,15 +3,15 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.Entity;
 using System.Data.Entity.Core.Common;
-using System.Diagnostics;
-using System.Globalization;
 using System.Data.Entity.Core.Common.CommandTrees;
 using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
 using System.Data.Entity.Core.Metadata.Edm;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
-using JetBrains.Annotations;
-using System.Text.RegularExpressions;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Npgsql.SqlGenerators
 {
@@ -479,7 +479,7 @@ namespace Npgsql.SqlGenerators
             return VisitJoinChildren(left.Expression, left.VariableName, right.Expression, right.VariableName, expression.ExpressionKind, condition, input, n);
         }
 
-        JoinExpression VisitJoinChildren(DbExpression left, string leftName, DbExpression right, string rightName, DbExpressionKind joinType, [CanBeNull] DbExpression condition, InputExpression input, PendingProjectsNode n)
+        JoinExpression VisitJoinChildren(DbExpression left, string leftName, DbExpression right, string rightName, DbExpressionKind joinType, [MaybeNull] DbExpression condition, InputExpression input, PendingProjectsNode n)
         {
             var join = new JoinExpression { JoinType = joinType };
 
@@ -1801,6 +1801,14 @@ namespace Npgsql.SqlGenerators
             default:
                 throw new InvalidOperationException($"PrimitiveTypeKind {primitiveTypeKind} is not supported.");
             }
+        }
+
+        internal static string MakeLiteral(TimeSpan ts)
+        {
+            return
+                ts.ToString(
+                    $@"{(ts < TimeSpan.Zero ? "\\-" : "")}{(ts.Days == 0 ? "" : "d\\ ")}hh\:mm\:ss{(ts.Ticks % 10000000 == 0 ? "" : "\\.FFFFFF")}",
+                    CultureInfo.InvariantCulture);
         }
     }
 }

@@ -12,7 +12,8 @@ using DbCommand = System.Data.Common.DbCommand;
 using System.Data.Common;
 using System.Data.Entity.Core.Mapping;
 using System.Data.Entity.Core.Objects;
-using JetBrains.Annotations;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using NpgsqlTypes;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -191,12 +192,6 @@ namespace Npgsql
                 sb.Append("CREATE DATABASE \"");
                 sb.Append(connection.Database);
                 sb.Append("\"");
-                if (conn.Settings.EntityTemplateDatabase != null)
-                {
-                    sb.Append(" TEMPLATE \"");
-                    sb.Append(conn.Settings.EntityTemplateDatabase);
-                    sb.Append("\"");
-                }
 
                 using (var  command = new NpgsqlCommand(sb.ToString(), conn))
                     command.ExecuteNonQuery();
@@ -235,7 +230,7 @@ namespace Npgsql
         {
             var connectionBuilder = new NpgsqlConnectionStringBuilder(connection.ConnectionString)
             {
-                Database = connection.Settings.EntityAdminDatabase ?? "template1",
+                Database = "template1",
                 Pooling = false
             };
 

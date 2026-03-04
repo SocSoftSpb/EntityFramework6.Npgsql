@@ -299,7 +299,7 @@ namespace EntityFramework6.Npgsql.Tests
 
                 int one = 1, two = 2, three = 3, four = 4;
                 bool True = true, False = false;
-                bool[] boolArr = { true, false };
+                List<bool> boolArr = [ true, false ];
                 IQueryable<int> oneRow = context.Posts.Where(p => false).Select(p => 1).Concat(new int[] { 1 });
                 Assert.AreEqual(oneRow.Select(p => one & (two ^ three)).First(), 1);
                 Assert.AreEqual(oneRow.Select(p => ~(one & two)).First(), ~(one & two));
@@ -786,7 +786,7 @@ namespace EntityFramework6.Npgsql.Tests
                 Console.WriteLine(query.ToString());
                 StringAssert.AreEqualIgnoringCase(
                     "SELECT  CASE  WHEN (COALESCE(@p__linq__0,E'default_value') IS NULL) THEN (E'')"
-                    + " WHEN (@p__linq__0 IS NULL) THEN (E'default_value') ELSE (@p__linq__0) END  ||"
+                    + " WHEN (CAST (@p__linq__0 AS text) IS NULL) THEN (E'default_value') ELSE (@p__linq__0) END  ||"
                     + " E'_postfix' AS \"C1\" FROM \"dbo\".\"Blogs\" AS \"Extent1\"",
                     query.ToString());
             }
@@ -812,11 +812,11 @@ namespace EntityFramework6.Npgsql.Tests
                 Assert.That(blog_title, Is.EqualTo("string_value1_postfix"));
 
                 Console.WriteLine(query.ToString());
-                StringAssert.AreEqualIgnoringCase(
-                    "SELECT  CASE  WHEN (COALESCE(@p__linq__0,COALESCE(@p__linq__1,@p__linq__2)) IS NULL)"
-                    + " THEN (E'') WHEN (@p__linq__0 IS NULL) THEN (COALESCE(@p__linq__1,@p__linq__2)) ELSE"
-                    + " (@p__linq__0) END  || E'_postfix' AS \"C1\" FROM \"dbo\".\"Blogs\" AS \"Extent1\"",
-                    query.ToString());
+                var expected = "SELECT  CASE  WHEN (COALESCE(@p__linq__0,COALESCE(@p__linq__1,@p__linq__2)) IS NULL)"
+                                                                               + " THEN (E'') WHEN (CAST (@p__linq__0 AS text) IS NULL) THEN (COALESCE(@p__linq__1,@p__linq__2)) ELSE"
+                                                                               + " (@p__linq__0) END  || E'_postfix' AS \"C1\" FROM \"dbo\".\"Blogs\" AS \"Extent1\"";
+                var actual = query.ToString();
+                StringAssert.AreEqualIgnoringCase(expected, actual);
             }
         }
 

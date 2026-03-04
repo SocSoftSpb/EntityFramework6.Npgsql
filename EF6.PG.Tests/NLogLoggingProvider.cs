@@ -1,4 +1,5 @@
-﻿using System;
+﻿#if false
+using System;
 using NLog;
 using Npgsql.Logging;
 
@@ -59,3 +60,5 @@ namespace EntityFramework6.Npgsql.Tests
         }
     }
 }
+
+#endif

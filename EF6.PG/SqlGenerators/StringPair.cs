@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using JetBrains.Annotations;
-
-namespace Npgsql.SqlGenerators
+﻿namespace Npgsql.SqlGenerators
 {
     /// <summary>
     /// Used for lookup in a Dictionary, since Tuple is not available in .NET 3.5
@@ -20,7 +14,7 @@ namespace Npgsql.SqlGenerators
             Item2 = s2;
         }
 
-        public override bool Equals([CanBeNull] object obj)
+        public override bool Equals(object obj)
         {
             var o = obj as StringPair;
             if (o == null)

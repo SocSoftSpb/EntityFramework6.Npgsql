@@ -13,7 +13,7 @@ namespace EntityFramework6.Npgsql.Tests
         {
             using var context = new BloggingContext(ConnectionString);
             using var tr = context.Database.BeginTransaction();
-            
+
             context.Database.Log = Console.Out.WriteLine;
 
             var objectContext = ((IObjectContextAdapter)context).ObjectContext;
@@ -127,6 +127,16 @@ namespace EntityFramework6.Npgsql.Tests
             
             context.Database.Log = Console.Out.WriteLine;
 
+            var blog1 = new Blog { Name = "AHello" };
+            var blog3 = new Blog { Name = "AHello" };
+            context.Blogs.Add(blog1);
+            context.Blogs.Add(new Blog { Name = "World" });
+            context.Blogs.Add(blog3);
+
+
+            context.Posts.Add(new Post{Blog = blog1, Title = "xx aaaaaaa", });
+            context.SaveChanges();
+
             var objectContext = ((IObjectContextAdapter)context).ObjectContext;
             IQueryable<Post> posts = objectContext.CreateObjectSet<Post>();
             IQueryable<Blog> blogs = objectContext.CreateObjectSet<Blog>();
@@ -148,8 +158,8 @@ namespace EntityFramework6.Npgsql.Tests
                 {
                     Title = e.Entity.Title + " xxx" + e.Source.Name,
                     Content = null,
-                    BlogId = 100
-                }, false);
+                    BlogId = blog3.BlogId
+                }, true);
                 
             var strToUpdate = updateQuery.ToTraceString();
             var result = updateQuery.Execute();

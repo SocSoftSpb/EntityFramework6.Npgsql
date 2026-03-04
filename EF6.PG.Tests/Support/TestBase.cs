@@ -1,9 +1,6 @@
 ﻿using System;
-using NLog.Config;
-using NLog.Targets;
 using NLog;
 using Npgsql;
-using Npgsql.Logging;
 
 using NUnit.Framework;
 
@@ -27,7 +24,7 @@ namespace EntityFramework6.Npgsql.Tests
         /// Unless the NPGSQL_TEST_DB environment variable is defined, this is used as the connection string for the
         /// test database.
         /// </summary>
-        const string DefaultConnectionString = "Server=localhost;User ID=npgsql_tests;Password=npgsql_tests;Database=npgsql_tests_ef6";
+        const string DefaultConnectionString = "Server=REDOS-PG-UL;User ID=postgres;Password=admin;Database=npgsql_tests_ef6";
 
         #region Setup / Teardown
 
