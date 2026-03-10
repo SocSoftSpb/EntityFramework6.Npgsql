@@ -733,7 +733,7 @@ namespace Npgsql
         void AppendValue(DateTimeOffset value, StringBuilder sql)
         {
             sql.Append("'");
-            sql.Append(value.UtcDateTime.ToString("o"));
+            sql.Append(SqlBaseGenerator.MakeLiteral(value));
             sql.Append("'");
         }
 

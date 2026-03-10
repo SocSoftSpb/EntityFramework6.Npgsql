@@ -119,7 +119,7 @@ namespace Npgsql.SqlGenerators
                 sqlText.AppendFormat(ni, "TIMESTAMP '{0:o}'", _value);
                 break;
             case PrimitiveTypeKind.DateTimeOffset:
-                sqlText.AppendFormat(ni, "TIMESTAMP WITH TIME ZONE '{0:o}'", _value);
+                sqlText.Append(ni, $"TIMESTAMP WITH TIME ZONE '{SqlBaseGenerator.MakeLiteral((DateTimeOffset)_value)}'");
                 break;
             case PrimitiveTypeKind.Decimal:
                 sqlText.AppendFormat(ni, (decimal)_value < 0

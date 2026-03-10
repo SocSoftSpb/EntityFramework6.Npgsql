@@ -1803,11 +1803,17 @@ namespace Npgsql.SqlGenerators
             }
         }
 
+        internal static string MakeLiteral(DateTimeOffset value)
+        {
+            var dt = new DateTime(value.UtcTicks, DateTimeKind.Unspecified);
+            return dt.ToString("o");
+        }
+
         internal static string MakeLiteral(TimeSpan ts)
         {
             return
                 ts.ToString(
-                    $@"{(ts < TimeSpan.Zero ? "\\-" : "")}{(ts.Days == 0 ? "" : "d\\ ")}hh\:mm\:ss{(ts.Ticks % 10000000 == 0 ? "" : "\\.FFFFFF")}",
+                    $@"{(ts < TimeSpan.Zero ? "\\-" : "")}{(ts.Days == 0 ? "" : "d\\ \\d\\a\\y\\ ")}hh\:mm\:ss{(ts.Ticks % 10000000 == 0 ? "" : "\\.FFFFFF")}",
                     CultureInfo.InvariantCulture);
         }
     }
