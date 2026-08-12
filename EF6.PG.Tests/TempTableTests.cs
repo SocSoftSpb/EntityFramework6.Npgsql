@@ -102,7 +102,9 @@ namespace EntityFramework6.Npgsql.Tests
             var fromQuery = (ObjectQuery<TempPost>)toInsert;
             if (withCache)
                 options.UniqueSetName = "UUQ_t_POST";
-            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
+            options.Schema = "pg_temp";
+            options.Table = "#t_Post";
+            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, options, true);
             var strInsert = insertQuery.ToTraceString();
             var result = insertQuery.Execute();
             
@@ -128,6 +130,8 @@ namespace EntityFramework6.Npgsql.Tests
             var options = context.CreateDynamicQueryOptions(typeof(TempPost));
             // options.Columns[1].ColumnName = "Title_X";
             options.Columns[2].ColumnName = "BlogId_Y";
+            options.Schema = "pg_temp";
+            options.Table = "#t_Post";
 
             var toInsert = blogs.Where(
                     e => !e.Name.Contains("aaa")
@@ -140,7 +144,7 @@ namespace EntityFramework6.Npgsql.Tests
                     });
                 
             var fromQuery = (ObjectQuery<TempPost>)toInsert;
-            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
+            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, options, true);
             var strInsert = insertQuery.ToTraceString();
             var result = insertQuery.Execute();
             
@@ -179,6 +183,8 @@ namespace EntityFramework6.Npgsql.Tests
             IQueryable<Post> posts = objectContext.CreateObjectSet<Post>();
             var options = context.CreateDynamicQueryOptions(typeof(TempPost));
             options.Columns[2].ColumnName = "BlogId_Y";
+            options.Schema = "pg_temp";
+            options.Table = "#t_Post";
 
             var dynQ = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post", options);
             var strDynQ = ((ObjectQuery)dynQ).ToTraceString();
@@ -203,7 +209,7 @@ namespace EntityFramework6.Npgsql.Tests
             Assert.AreEqual(posts2Cnt, toInsertCount);
 
             var fromQuery = (ObjectQuery<TempPost>)toInsert;
-            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
+            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, options, true);
             var strInsert = insertQuery.ToTraceString();
             var result = insertQuery.Execute();
 
@@ -238,6 +244,9 @@ namespace EntityFramework6.Npgsql.Tests
             var options = context.CreateDynamicQueryOptions(typeof(TempPost));
             options.Columns[1].ColumnName = "Title_X";
             options.Columns[2].ColumnName = "BlogId_Y";
+            options.Schema = "pg_temp";
+            options.Table = "#t_Post";
+
             var dynQ = context.DynamicQuery<TempPost>("TABLE:pg_temp.#t_Post");
             var strDynQ = ((ObjectQuery)dynQ).ToTraceString();
                     
@@ -261,7 +270,7 @@ namespace EntityFramework6.Npgsql.Tests
             var fromQuery = (ObjectQuery<TempPost>)toInsert;
             if (withCache)
                 options.UniqueSetName = "UUQ_t_POST";
-            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, "pg_temp.#t_Post", options, true);
+            var insertQuery = BatchDmlFactory.CreateBatchInsertDynamicTableQuery(fromQuery, options, true);
             var strInsert = insertQuery.ToTraceString();
             var result = insertQuery.Execute();
                     
